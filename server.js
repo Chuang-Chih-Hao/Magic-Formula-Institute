@@ -562,4 +562,4 @@ function runServer(port = PORT) {
 
 if (require.main === module) runServer();
 
-module.exports = { runServer, makeQuestion, qualityFor, batchCost, purchaseChance, RECIPES, UPGRADES, newPlayer, npcAiMode, geminiNpcRequest, extractGeminiNpcText };
+module.exports = { runServer, makeQuestion, qualityFor, batchCost, purchaseChance, RECIPES, UPGRADES, newPlayer, npcAiMode, geminiNpcRequest, extractGeminiNpcText, maybeAiDialogue };
