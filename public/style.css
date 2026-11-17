@@ -221,3 +221,21 @@ strong{font-weight:900}
 @media(max-width:900px){.welcome-grid,.host-grid{grid-template-columns:1fr}.welcome-form{display:grid;grid-template-columns:1fr 1fr}.rules-strip{grid-template-columns:repeat(2,1fr)}.village-row{grid-template-columns:repeat(2,1fr)}.main-layout{grid-template-columns:1fr 1fr}.book{grid-column:1}.stage-panel{grid-column:2}.workbench-inner{grid-template-columns:1fr 1fr}}
 @media(max-width:680px){.welcome{padding:16px 12px 45px}.welcome-head{align-items:flex-start}.welcome-head .pill{display:none}.welcome-grid,.welcome-form,.main-layout,.workbench-inner{display:grid;grid-template-columns:1fr}.welcome-showcase{padding:25px 20px 12px}.welcome-art{margin:0 -20px -12px;height:230px}.welcome-art .market-scene{transform:scale(.74);transform-origin:50% 100%}.welcome-title{font-size:36px}.rules-strip{gap:8px}.rule{font-size:12px}.shell{padding:12px 10px 38px}.topbar .logo-sub{display:none}.top-stats{gap:6px}.top-stat{font-size:12px;padding:6px 9px;min-height:40px}.top-stat b{font-size:14px}.village-row{gap:7px}.shop-chip{padding:8px;gap:6px}.shop-chip .chip-emoji{width:32px;height:32px;font-size:18px}.shop-chip .chip-name{font-size:12px}.shop-chip .chip-money{font-size:11px}.book,.stage-panel,.workbench{grid-column:1}.panel{padding:16px}.market-scene{height:345px}.shop-building{transform:translateX(-50%) scale(.88);transform-origin:50% 100%;bottom:27px}.npc-character{right:4px;bottom:23px}.npc-character .npc-emoji{font-size:57px}.npc-speech{top:94px;right:5px;width:121px}.scene-sun{right:29px}.host-panel{padding:18px}.form-row{flex-direction:column}}
 @media(prefers-reduced-motion:reduce){*,*:before,*:after{animation-duration:.01ms!important;transition-duration:.01ms!important}}
+
+/* Cozy shop upgrades and their decorations */
+.upgrade-section{margin-top:13px;padding:13px;border:2px solid #f0dfc9;border-radius:17px;background:#fffcf6}
+.upgrade-section h3{font-size:15px}
+.upgrade-list{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:7px;margin-top:9px}
+.upgrade-item{display:flex;flex-direction:column;align-items:center;gap:3px;min-width:0;padding:8px 4px;border:2px solid #e9d5c3;background:#fff5e9;border-radius:13px;color:#745a49}
+.upgrade-item .upgrade-emoji{font-size:23px}
+.upgrade-item .upgrade-name{font-weight:900;font-size:11px;line-height:1.25;text-align:center}
+.upgrade-item .upgrade-name small{display:block;font-size:10px;font-weight:800}
+.upgrade-item .upgrade-cost{font-size:11px;font-weight:900;background:#fff0cf;border-radius:8px;padding:2px 6px}
+.upgrade-item.owned{border-color:#bdd9c5;background:#e8f7ed;opacity:1}
+.upgrade-item.owned .upgrade-cost{background:#c9ead4;color:#4b8460}
+.scene-decor{position:absolute;inset:0;z-index:9;pointer-events:none}
+.decor{position:absolute;filter:drop-shadow(1px 3px 0 #80675857);animation:hop 3s ease-in-out infinite}
+.decor-flowers{font-size:43px;left:20px;bottom:21px}
+.decor-lanterns{font-size:35px;left:30%;top:49px}
+.decor-seats{font-size:46px;right:18px;bottom:21px}
+@media(max-width:680px){.upgrade-list{gap:5px}.upgrade-item{padding:8px 3px}.upgrade-item .upgrade-name{font-size:11px}.decor-flowers{left:7px}.decor-seats{right:7px}}
