@@ -30,11 +30,19 @@
 
 可將遊戲時間設為 **25～30 分鐘**，依班級進度調整。遊戲中的「品質分數」是一種把三項比例與顧客喜好轉成模擬結果的機制，不代表真實飲料的科學測量。
 
-## 🤖 NPC 與可選的 AI
+## 🤖 NPC 與 Gemini AI（可使用免費層級）
 
-- **無需任何 API Key** 即可玩完整遊戲。NPC 使用伺服器端的購買判斷演算法，參考預算、偏好、品質、價格及機率；每次是否購買並非由前端決定，因此學生不能直接竄改分數。
-- 可選擇以 OpenAI API **生成少量個性化顧客台詞**：在 Render 服務環境變數設定 AI_NPC_ENABLED=true 和 OPENAI_API_KEY，必要時設定 OPENAI_MODEL（預設 gpt-4o-mini）。為避免意外費用，每一間教室最多約每 45 秒產生一次 AI 台詞；API 失效時自動使用原本的台詞。
-- **AI 只補充顧客台詞，不負責判定是否購買或修改成績**。請勿把 API Key 放入網頁或 GitHub。AI 請求只包含虛構 NPC、商品與交易情境，不包含學生姓名。
+遊戲不需要任何 API Key 也能完整遊玩。NPC 依據預算、偏好、品質與價格，透過伺服器端規則決定是否購買；AI **只生成約 30 字的繁體中文顧客台詞**，絕不修改交易結果或成績。
+
+Gemini AI 設定（本專案 Render 服務： https://dashboard.render.com/web/srv-dbu40qtckfvc73b1m58g ）：
+
+1. 到 https://aistudio.google.com/api-keys 建立免費層級的 Gemini API Key。請確認自己使用的是免費層級，並留意 Google AI Studio 最新的配額與資料使用規定。
+2. 進 Render → 服務 `magic-formula-institute` → **Environment**，加入 **`GEMINI_API_KEY`**，值貼上自行取得的秘密金鑰。
+3. **`GEMINI_MODEL`** 可不設定，預設 `gemini-3.5-flash-lite`。**`AI_NPC_ENABLED`** 預設為 `true`，設為 `false` 可暫停 AI 呼叫。
+4. 按 **Save, rebuild, and deploy**（或 Render 提供的等效儲存及部署選項），部署成功後開啟 https://magic-formula-institute.onrender.com/health ，查看 `npcAiMode`：`gemini` 表示已偵測到金鑰並允許使用 Gemini；`local` 表示尚未啟用。**這不等同於 Google API 已成功回覆**，必須進遊戲等 NPC 來訪才會真正呼叫。
+5. 如遇配額、授權、網路逾時或 API 故障，遊戲自動保留預設 NPC 台詞，答題、販售與排名照常運作。為節省免費額度，每個房間最多約每 **45 秒**送一次 AI 台詞請求，不會每個學生每次來客都呼叫 AI。
+
+**安全提醒：** 不要把 Key 貼進對話、前端網頁或 GitHub，API 請求只在伺服器進行；只傳送虛構動物 NPC 的喜好、預算與購買情境，不會傳送學生姓名。Google 免費方案可能使用輸入內容改善產品，避免傳送任何學生個資。依專案實際計費層級，配額與費用可能變動。
 
 ## 🧰 技術結構
 
@@ -69,7 +77,7 @@
 
 ### 完成 Render 建立後的檢查
 
-將你的 **Render 網址** 回傳至這個對話，即可再做公開網址、健康檢查、實際 WebSocket 連線、教室加入、出題與 NPC 交易等驗收；目前還未替你建立 Render 服務。
+Render 已建立： https://magic-formula-institute.onrender.com 。部署後可再測試公開網址、健康檢查、WebSocket 連線與 AI NPC 台詞；API Key 不應外傳。
 
 ## 🔒 隱私與安全
 
