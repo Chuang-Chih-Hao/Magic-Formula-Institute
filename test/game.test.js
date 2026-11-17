@@ -43,6 +43,8 @@ test("one student can join, decorate before opening, brew, reprice, and finish",
   const url = "http://127.0.0.1:" + service.httpServer.address().port;
   const teacher = client(url, { transports: ["websocket"], reconnection: false });
   const pupil = client(url, { transports: ["websocket"], reconnection: false });
+  let latestPlayer = null;
+  pupil.on("player:state", (value) => { latestPlayer = value; });
   t.after(async () => {
     teacher.disconnect();
     pupil.disconnect();
@@ -71,11 +73,39 @@ test("one student can join, decorate before opening, brew, reprice, and finish",
   assert.equal(brewed.ok, true);
   assert.equal(brewed.cost, 18);
   assert.ok(brewed.quality <= 81);
+  assert.equal(latestPlayer.stock.length, 1);
+  const repriced = await emit(pupil, "stock:price", { itemId: latestPlayer.stock[0].id, price: 35 });
+  assert.equal(repriced.ok, true);
+  assert.equal(latestPlayer.stock[0].price, 35);
 
   const quest = await emit(pupil, "quest:request", { targetId: "berry" });
   assert.equal(quest.ok, true);
+  const q = latestPlayer.quest;
+  assert.ok(q);
+  const nums = [...q.prompt.matchAll(/\d+/g)].map((m) => Number(m[0]));
+  const gcd = (a, b) => b ? gcd(b, a % b) : a;
+  let expected;
+  if (q.skill === "化簡比") expected = (nums[0] / gcd(nums[0], nums[1])) + "：" + (nums[1] / gcd(nums[0], nums[1]));
+  if (q.skill === "比值") expected = String(Number((nums[0] / nums[1]).toFixed(2)));
+  if (q.skill === "等比應用") expected = String(nums[1] * nums[2] / nums[0]);
+  if (q.skill === "生活比例") expected = String(nums[1] / nums[0] * nums[2]);
+  if (q.skill === "比例式") expected = String(nums[0] * nums[2] / nums[1]);
+  if (q.skill === "三項比例") expected = (nums[1] * nums[3] / nums[0]) + " 匙、" + (nums[2] * nums[3] / nums[0]) + " 匙";
+  const choiceIndex = q.choices.indexOf(expected);
+  assert.ok(choiceIndex >= 0, "quiz should have the mathematically correct answer");
+  const answered = await emit(pupil, "quest:answer", { choiceIndex });
+  assert.equal(answered.ok, true);
+  assert.equal(answered.correct, true);
+  assert.deepEqual(latestPlayer.unlocked, ["berry"]);
+  const knownBrew = await emit(pupil, "brew:create", { targetId: "berry", mix: [2, 1, 1], price: 30 });
+  assert.equal(knownBrew.ok, true);
+  assert.ok(knownBrew.quality >= 96);
+  const upgrade = await emit(pupil, "shop:upgrade", { upgradeId: "flowers" });
+  assert.equal(upgrade.ok, true);
+  assert.ok(latestPlayer.upgrades.includes("flowers"));
+  assert.equal((await emit(pupil, "shop:upgrade", { upgradeId: "flowers" })).ok, false);
   const badBrew = await emit(pupil, "brew:create", { targetId: "berry", mix: [2, 1, 1], price: 30 });
-  assert.equal(badBrew.ok, false);
+  assert.equal(badBrew.ok, true);
 
   const paused = await emit(teacher, "host:pause");
   assert.equal(paused.ok, true);
@@ -87,4 +117,7 @@ test("one student can join, decorate before opening, brew, reprice, and finish",
   assert.equal(finished.ok, true);
   const restarted = await emit(teacher, "host:reset");
   assert.equal(restarted.ok, true);
+  assert.equal(latestPlayer.stock.length, 0);
+  assert.equal(latestPlayer.unlocked.length, 0);
+  assert.equal(latestPlayer.upgrades.length, 0);
 });
