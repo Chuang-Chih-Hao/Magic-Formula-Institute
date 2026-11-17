@@ -13,5 +13,9 @@ jobs:
           node-version: '20'
       - name: Install dependencies
         run: npm install --no-audit --no-fund
+      - name: Syntax check
+        run: |
+          node --check server.js
+          node --check public/app.js
       - name: Run classroom integration tests
         run: npm test
