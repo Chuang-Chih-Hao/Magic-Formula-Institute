@@ -115,7 +115,16 @@ test("one student can join, decorate before opening, brew, reprice, and finish",
   assert.equal(resumed.ok, true);
   const finished = await emit(teacher, "host:finish");
   assert.equal(finished.ok, true);
-  const resetState = once(pupil, "player:state");
+  const resetState = new Promise((resolve, reject) => {
+    const timeout = setTimeout(() => { pupil.off("player:state", onState); reject(Error("Reset state not received")); }, 3000);
+    function onState(state) {
+      if (state.stock.length !== 0 || state.unlocked.length !== 0 || state.upgrades.length !== 0) return;
+      clearTimeout(timeout);
+      pupil.off("player:state", onState);
+      resolve();
+    }
+    pupil.on("player:state", onState);
+  });
   const restarted = await emit(teacher, "host:reset");
   assert.equal(restarted.ok, true);
   await resetState;
