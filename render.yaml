@@ -1,0 +1,14 @@
+services:
+  - type: web
+    name: magic-formula-institute
+    runtime: node
+    plan: free
+    buildCommand: npm install --omit=optional
+    startCommand: npm start
+    healthCheckPath: /health
+    autoDeployTrigger: commit
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: AI_NPC_ENABLED
+        value: "false"
