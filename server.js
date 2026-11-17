@@ -285,7 +285,7 @@ async function maybeAiDialogue(io, room, player, visit) {
         "Content-Type": "application/json"
       },
       body: JSON.stringify(body),
-      signal: AbortSignal.timeout(8000)
+      signal: AbortSignal.timeout(16000)
     });
     if (!response.ok) {
       console.warn("[NPC AI] Gemini HTTP " + response.status + "; using offline dialogue.");
@@ -293,10 +293,21 @@ async function maybeAiDialogue(io, room, player, visit) {
     }
     const data = await response.json();
     const text = extractGeminiNpcText(data);
-    if (text && player.socketId) io.to(player.socketId).emit("npc:dialogue", { visitId: visit.id, text });
-  } catch (_) {
-    // No API key, model access, quota, or network failure may interrupt gameplay.
-    console.warn("[NPC AI] Gemini unavailable; using offline dialogue.");
+    if (text && player.socketId) {
+      io.to(player.socketId).emit("npc:dialogue", { visitId: visit.id, text });
+      console.info("[NPC AI] Gemini reply delivered successfully.");
+    } else {
+      console.warn("[NPC AI] Gemini returned no usable dialogue; using offline dialogue.");
+    }
+  } catch (error) {
+    // Only disclose a broad diagnostic category. Never log keys, prompts or raw request URLs.
+    const kind = error && error.name === "TimeoutError" ? "timeout"
+      : error && error.name === "AbortError" ? "aborted"
+      : error && /Invalid Gemini model/.test(error.message || "") ? "invalid-model"
+      : error && error.cause && /ENOTFOUND|EAI_AGAIN/.test(error.cause.code || "") ? "dns"
+      : error && error.cause && /ECONNREFUSED|ENETUNREACH|ETIMEDOUT/.test(error.cause.code || "") ? "network"
+      : "other";
+    console.warn("[NPC AI] Gemini request failed: " + kind + "; using offline dialogue.");
   }
 }
 
