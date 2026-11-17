@@ -17,5 +17,8 @@ jobs:
         run: |
           node --check server.js
           node --check public/app.js
+          node --check fair-server.js
+          node --check fair-questions.js
+          node --check public/fair.js
       - name: Run classroom integration tests
         run: npm test
