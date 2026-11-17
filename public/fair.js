@@ -213,7 +213,7 @@
     if(!events.length)return '<div class="empty-feed">🐾 動物顧客還沒進場，開市後會自動逛攤！</div>';
     return events.slice(0,9).map(e=>'<div class="event '+esc(e.kind)+'">'
       +'<span class="event-emoji">'+(e.emoji||"🎪")+'</span>'
-      +'<div><strong>'+esc(e.message)+'</strong>'+(e.why?'<small>💭 '+esc(e.why)+'</small>':"")+'</div></div>').join("");
+      +'<div><strong>'+esc(e.message)+'</strong>'+(e.why?'<small>💭 '+esc(e.why)+'</small>':"")+(npcLines[e.npcId]?'<small class="ai-dialogue">💬 AI 顧客：'+esc(npcLines[e.npcId])+'</small>':"")+'</div></div>').join("");
   }
   function compareNpc() {
     const all=room?.npcs||[];
@@ -350,8 +350,24 @@
     if(action==="practice")return send("quest:get",{target:"practice"});
     if(action==="answer")return send("quest:answer",{index:Number(b.dataset.index)},r=>toast(r.correct?"答對了！已獲得研究星星。":"看看解析，再挑戰新題吧。",!r.correct));
     if(action==="lock"){
-      const sure=confirm("確定鎖定這間攤位？鎖定後，飲品配方、售價和裝飾都不能修改，直到下一場園遊會。");
-      if(sure)send("player:lock",{},()=>toast("🔒 攤位已封存，等待老師開市！"));
+      if(!$("shopName"))return;
+      draft.shopName=$("shopName").value.trim();
+      if(!draft.shopName)return toast("請先為你的攤位取名",true);
+      if(new Set(draft.products.map(p=>p.recipeId)).size!==3)return toast("三款飲品必須是不同的配方",true);
+      if(draft.products.some(p=>!p.mix.every(n=>Number.isInteger(n)&&n>=1&&n<=12)
+        ||p.mix.reduce((a,b)=>a+b,0)>27||!Number.isInteger(p.price)||p.price<12||p.price>80))
+        return toast("請檢查三款飲料的匙數及售價",true);
+      const sure=confirm("會先自動儲存所有選擇，再鎖定攤位。鎖定後，配方、售價與裝飾均不能更改，直到下一場。確定嗎？");
+      if(!sure)return;
+      send("shop:update",{shopName:draft.shopName,theme:draft.theme},()=>{
+        send("decor:set",{decor:draft.decor},()=>{
+          const saveSlot=i=>{
+            if(i>=3)return send("player:lock",{},()=>toast("🔒 三款飲料與裝飾已封存！"));
+            send("product:set",{slot:i,...draft.products[i]},()=>saveSlot(i+1));
+          };
+          saveSlot(0);
+        });
+      });
       return;
     }
     if(action==="start")return send("host:start",{},()=>toast("🎉 魔法園遊會正式開市！"));
@@ -423,6 +439,7 @@
   });
   socket.on("player:state",data=>{
     const wasReady=me?.ready;
+    if(wasReady&&!data.ready)draft=null;
     me=data;
     syncDraft(!wasReady&&data.ready);
     if(role==="student")render();
@@ -432,6 +449,7 @@
   });
   socket.on("npc:dialogue",data=>{
     npcLines[data.visitId]=data.text;
+    if($("eventFeed"))$("eventFeed").innerHTML=eventFeed();
   });
   socket.on("connect",()=>{
     const old=loadSession();
