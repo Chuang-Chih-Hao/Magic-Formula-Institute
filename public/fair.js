@@ -11,7 +11,7 @@
     mint:{name:"森林玻璃屋",emoji:"🌿",tag:"透明溫室與藤蔓",accent:"#83c5a5"},
     peach:{name:"蜜桃茶亭",emoji:"🍑",tag:"溫暖的雙層木屋",accent:"#efb17e"}
   };
-  let room=null,me=null,role=null,secret=null,myToken=null,selection=0;
+  let room=null,me=null,role=null,secret=null,myToken=null,selection=0,selectedNpcId=null;
   let draft=null,toastHandle=null,serverOffset=0;
   let npcLines={},renderMode="",lastRoomPhase="",lastPlayerId=null;
   let mapFocused=false,animationActive=true,previousFrame=0;
@@ -215,6 +215,24 @@
       +'<span class="event-emoji">'+(e.emoji||"🎪")+'</span>'
       +'<div><strong>'+esc(e.message)+'</strong>'+(e.why?'<small>💭 '+esc(e.why)+'</small>':"")+'</div></div>').join("");
   }
+  function compareNpc() {
+    const all=room?.npcs||[];
+    const n=all.find(x=>x.id===selectedNpcId)||all.find(x=>x.stage==="wandering")||all[all.length-1];
+    if(!n)return '<div class="empty-feed">🐰 還沒有顧客進場。NPC 一入場，就會在這裡顯示比較過的攤位評分。</div>';
+    const scores=n.visitorScores||[];
+    const top=scores[0];
+    const decided=n.stage!=="wandering";
+    return '<div class="npc-head"><span class="npc-big">'+esc(n.emoji)+'</span>'
+      +'<div><b>'+esc(n.name)+'</b><small>偏好 '+esc(n.flavor)+' · 預算 🪙 '+n.budget+'</small></div>'
+      +'<span class="npc-stage">'+(decided?(n.bought?"✅ 已購買":"🧺 沒購買"):"🚶 逛街比價中")+'</span></div>'
+      +'<p class="npc-tip">比較方式：飲品品質＋價格合理度＋喜好口味＋攤位裝飾加分（越高越有吸引力）。</p>'
+      +'<div class="npc-scores">'+scores.map((x,i)=>'<div class="npc-score '+(i===0?"top":"")+'" data-action="compare-booth" data-id="'+esc(x.shopId)+'">'
+        +'<b>'+(i===0?"💛 ":"")+esc(x.shopName)+'</b>'
+        +'<span>品質 '+x.quality+' · 🪙'+x.price+'</span>'
+        +'<strong>'+x.score+' 分</strong></div>').join("")+'</div>'
+      +(top?'<p class="npc-tip">'+(decided?"最後最有吸引力的是「":"目前比較喜歡「")+esc(top.shopName)+'」；'+(n.bought&&decided?"已經買下這杯！":decided?"但這次沒有成交。":"還在走路比較中。")+'</p>':
+        '<p class="npc-tip">目前沒有任何店鋪的商品符合這位顧客的預算。</p>');
+  }
   function selectedBoothCard(){
     const p=room?.players?.[selection];
     if(!p)return '<div class="empty-feed">點選地圖上的任一攤位，看看他們的商品與裝飾！</div>';
@@ -237,7 +255,8 @@
       +'<div class="map-viewport"><canvas id="fairCanvas" width="1040" height="680" tabindex="0" aria-label="魔法園遊會地圖，四間攤位和走動的動物顧客"></canvas></div>'
       +'<div class="map-legend"><span>🐾 顧客走動</span><span>🍹 停攤比較</span><span>💛 決定購買</span><span>💰 賺取淨利</span></div>'
       +'<div class="surface-inset"><div class="section-title"><h2>🔍 目前查看的攤位</h2><small>點地圖切換</small></div><div id="boothDetails">'+selectedBoothCard()+'</div></div></section>'
-      +'<aside class="market-side"><div class="surface"><div class="section-title"><h2>🏆 即時淨利排行</h2><span class="pill">全場同步</span></div><div id="leaderboard">'+scoreboard()+'</div>'
+      +'<aside class="market-side"><div class="surface"><div class="section-title"><h2>🔎 顧客正在比較什麼？</h2><span class="pill">點地圖上的動物切換</span></div><div id="npcComparison">'+compareNpc()+'</div></div>'
+      +'<div class="surface"><div class="section-title"><h2>🏆 即時淨利排行</h2><span class="pill">全場同步</span></div><div id="leaderboard">'+scoreboard()+'</div>'
       +'<p class="hint">每賣出一杯會扣除那杯的材料成本。裝飾影響 NPC 比較分數，而不是直接增加金幣。</p></div>'
       +'<div class="surface"><div class="section-title"><h2>📣 顧客園遊會日記</h2><span class="pill">即時成交原因</span></div>'
       +'<div class="events" id="eventFeed">'+eventFeed()+'</div></div></aside></div>'
@@ -249,6 +268,7 @@
     if($("leaderboard"))$("leaderboard").innerHTML=scoreboard();
     if($("eventFeed"))$("eventFeed").innerHTML=eventFeed();
     if($("boothDetails"))$("boothDetails").innerHTML=selectedBoothCard();
+    if($("npcComparison"))$("npcComparison").innerHTML=compareNpc();
     setText("npcCount",room.npcs.filter(n=>n.stage==="wandering").length);
     setText("timeText",clock(room.remaining));
     setText("phaseLabel",room.paused?"⏸ 暫停中":"✦ "+phase());
@@ -261,7 +281,7 @@
     }else if(isTeacher())hostSetup();
     else if(!me){return;}
     else if(me.ready)readyWaiting();
-    else studentSetup();
+    else {if(lastRoomPhase&&lastRoomPhase!=="setup")draft=null;studentSetup();}
     lastRoomPhase=room.phase;
   }
 
@@ -301,10 +321,12 @@
       return;
     }
     if(action==="theme"){
+      draft.shopName=$("shopName")?.value||draft.shopName;
       draft.theme=b.dataset.id;
       studentSetup();return;
     }
     if(action==="toggle-decor"){
+      draft.shopName=$("shopName")?.value||draft.shopName;
       const id=b.dataset.id;
       if(draft.decor.includes(id))return toast("至少要保留兩件裝飾；點另一件即可替換。");
       draft.decor=[draft.decor[1],id];
@@ -341,6 +363,11 @@
     }
     if(action==="reset"){
       if(confirm("下一場將重新開放設計，所有攤位的營收與題目進度會歸零。"))send("host:reset",{},()=>{draft=null;toast("下一場準備開始！");});
+      return;
+    }
+    if(action==="compare-booth"){
+      const p=room?.players.find(x=>x.id===b.dataset.id);
+      if(p){selection=p.booth;if($("boothDetails"))$("boothDetails").innerHTML=selectedBoothCard();}
       return;
     }
     if(action==="view-booth"){
@@ -605,7 +632,8 @@
     const finish=points[points.length-1];
     if(n.stage!=="wandering"&&now>=n.decideAt){
       const k=Math.min(1,Math.max(0,(now-n.decideAt)/4700));
-      return {x:finish.x+(520-finish.x)*k,y:finish.y+(666-finish.y)*k};
+      if(k<.46)return{x:finish.x+(520-finish.x)*(k/.46),y:finish.y+(343-finish.y)*(k/.46)};
+      return{x:520,y:343+(666-343)*((k-.46)/.54)};
     }
     if(age>=finish.t)return{x:finish.x,y:finish.y};
     for(let i=1;i<points.length;i++){
@@ -663,9 +691,16 @@
     background(c,now);
     for(let i=0;i<4;i++)shop(c,room.players[i]||null,i,now);
     const npcs=room.npcs||[];
+    const focus=npcs.find(x=>x.id===selectedNpcId);
+    if(focus){
+      const paths=focus.path||[];
+      c.save();c.beginPath();c.strokeStyle="#ec8d9c";c.lineWidth=5;c.setLineDash([10,9]);
+      paths.forEach((pt,i)=>{if(i===0)c.moveTo(pt.x,pt.y);else c.lineTo(pt.x,pt.y);});c.stroke();c.restore();
+    }
     npcs.forEach((n,i)=>{
       const p=npcXY(n,now),dx=((n.id.charCodeAt(0)%7)-3)*3;
       npcSprite(c,n,p.x+dx,p.y,now);
+      if(n.id===selectedNpcId){circle(c,p.x+dx,p.y-4,30,null,"#ff718d",4);}
       if(i>=Math.max(0,npcs.length-4)||n.stage!=="wandering")drawNpcBubble(c,n,p.x+dx,p.y,now);
     });
     if(room.phase==="finished"){
@@ -690,6 +725,16 @@
     const rect=e.target.getBoundingClientRect();
     const x=(e.clientX-rect.left)*1040/rect.width;
     const y=(e.clientY-rect.top)*680/rect.height;
+    const hitNpc=(room.npcs||[]).find(n=>{
+      const p=npcXY(n,room.paused?(room.serverNow||localTime()):localTime());
+      return Math.hypot(p.x-x,p.y-y)<34;
+    });
+    if(hitNpc){
+      selectedNpcId=hitNpc.id;
+      if($("npcComparison"))$("npcComparison").innerHTML=compareNpc();
+      toast("正在查看 "+hitNpc.name+" 的比較評分");
+      return;
+    }
     const index=shopPos.findIndex(p=>Math.abs(p.x-x)<166&&Math.abs((p.y-70)-y)<165);
     if(index>=0&&room.players[index]){
       selection=index;
