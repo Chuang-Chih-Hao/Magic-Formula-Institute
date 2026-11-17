@@ -11,6 +11,11 @@
     mint: { name: "森林甜點屋", emoji: "🍀" },
     peach: { name: "蜜桃小木屋", emoji: "🍑" }
   };
+  const UPGRADES = [
+    { id: "flowers", emoji: "🌷", name: "迎賓花圃", cost: 40, perk: "心動率 +3%" },
+    { id: "lanterns", emoji: "✨", name: "星光燈串", cost: 70, perk: "心動率 +5%" },
+    { id: "seats", emoji: "🪑", name: "甜點座位", cost: 100, perk: "心動率 +8%" }
+  ];
   let role = null;
   let room = null;
   let me = null;
@@ -63,6 +68,7 @@
       + '<div class="shop-wall"></div><div class="shop-awning"></div><div class="shop-window"></div>'
       + '<div class="shop-shelf" id="' + (preview ? "previewShelf" : "sceneShelf") + '"><span class="potion berry"></span><span class="potion forest"></span><span class="potion moon"></span></div>'
       + '<div class="shop-counter"></div></div>'
+      + '<div class="scene-decor" id="' + (preview ? "previewDecor" : "sceneDecor") + '"></div>'
       + '<div class="npc-speech" id="' + (preview ? "previewSpeech" : "sceneSpeech") + '">' + esc(words) + '</div>'
       + '<div class="npc-character"><span class="npc-emoji" id="' + (preview ? "previewNpc" : "sceneNpc") + '">' + esc(face) + '</span><span class="npc-name" id="' + (preview ? "previewNpcName" : "sceneNpcName") + '">' + esc(customer) + '</span></div>'
       + '<span class="scene-flower one">🌼</span><span class="scene-flower two">🌸</span><span class="scene-flower three">✿</span>'
@@ -227,6 +233,7 @@
       + '</select></div></div>'
       + '<button class="btn btn-secondary btn-mini" data-action="save-shop" style="margin-bottom:12px">🎀 儲存我的店鋪裝潢</button>'
       + sceneMarkup(false)
+      + '<div class="upgrade-section"><h3>🎀 讓店鋪更受歡迎</h3><p class="scene-caption">用金幣裝飾小店，增加 NPC 顧客購買的機率</p><div id="upgradesZone" class="upgrade-list"></div></div>'
       + '<div class="scene-bottom"><div class="score-tile"><strong id="myCoins">150</strong><small>🪙 手上金幣</small></div>'
       + '<div class="score-tile"><strong id="myProfit">0</strong><small>📈 目前淨利</small></div>'
       + '<div class="score-tile"><strong id="mySales">0</strong><small>🧋 已賣杯數</small></div></div>'
@@ -268,6 +275,16 @@
     }).join("")
       + '<button class="recipe-card mystery-recipe ' + (selected === "mystery" ? "selected" : "") + '" data-action="select-recipe" data-id="mystery" ' + (!available() ? "disabled" : "") + '>'
       + '<span class="recipe-icon">🎲</span><span class="recipe-body"><strong>神秘自由調配</strong><span class="recipe-desc">不用解鎖，但品質容易失控！</span></span><span class="recipe-lock">實驗</span></button>';
+  }
+
+  function upgradesHtml() {
+    if (!me) return "";
+    return UPGRADES.map((u) => {
+      const owned = (me.upgrades || []).includes(u.id);
+      return '<button class="upgrade-item ' + (owned ? "owned" : "") + '" data-action="upgrade" data-id="' + u.id + '" ' + (owned || !available() || me.coins < u.cost ? "disabled" : "") + '>'
+        + '<span class="upgrade-emoji">' + u.emoji + '</span><span class="upgrade-name">' + esc(u.name) + '<small>' + u.perk + '</small></span>'
+        + '<span class="upgrade-cost">' + (owned ? "✓ 已購買" : "🪙" + u.cost) + '</span></button>';
+    }).join("");
   }
 
   function selectedInfo() {
@@ -316,6 +333,11 @@
     setHtml("selectedInfo", selectedInfo());
     setHtml("quizZone", quizHtml());
     setHtml("stockList", stockHtml());
+    setHtml("upgradesZone", upgradesHtml());
+    setHtml("sceneDecor", (me.upgrades || []).map((id) => {
+      const upgrade = UPGRADES.find((u) => u.id === id);
+      return upgrade ? '<span class="decor decor-' + id + '">' + upgrade.emoji + "</span>" : "";
+    }).join(""));
     setHtml("visitFeed", visitsHtml());
     setHtml("bookProgress", '<span class="pill pill-green">🔓 已解鎖 ' + me.unlocked.length + ' / ' + room.recipes.length + ' 張</span><span class="pill">✅ 答對 ' + me.correct + ' 題</span>');
     setText("myCoins", me.coins);
@@ -435,6 +457,9 @@
       });
     }
     if (action === "select-recipe") return applyRecipe(target.dataset.id);
+    if (action === "upgrade") {
+      return send("shop:upgrade", { upgradeId: target.dataset.id }, (r) => toast("🎀 已裝飾「" + r.name + "」！花費 " + r.cost + " 金幣。"));
+    }
     if (action === "brew") {
       const mix = mixValues(), price = Number(byId("sellPrice").value);
       if (!mix.every((n) => Number.isInteger(n) && n >= 1 && n <= 12) || mix.reduce((a, b) => a + b, 0) > 27) return toast("材料必須為 1～12 匙的整數，而且總和不能超過 27 匙。", true);
