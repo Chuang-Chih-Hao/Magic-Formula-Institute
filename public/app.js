@@ -192,6 +192,7 @@
       + '<div class="section-head"><h2>🎓 教師控制中心</h2><span class="pill pill-green">教室已建立</span></div>'
       + '<span class="host-hero">🏡</span>'
       + '<p style="text-align:center;color:#8a7260;font-weight:800">讓學生輸入下方代碼，開始今天的魔法開店競賽。</p>'
+      + '<p class="guide-note" style="text-align:center" id="aiNpcIndicator">' + (room.aiNpcMode === "gemini" ? "🤖 已偵測到 Gemini Key：AI 顧客台詞待實際呼叫驗證" : "🧸 目前使用內建 NPC 台詞（Gemini Key 尚未啟用）") + '</p>'
       + '<div style="text-align:center;margin:10px 0"><span class="big-room-code">' + esc(room.code) + '</span></div>'
       + '<button class="btn btn-secondary" style="width:100%" data-action="copy-code">📋 複製房間代碼</button>'
       + '<div class="host-select"><label class="field-label" for="durationChoice">遊戲時間</label>'
