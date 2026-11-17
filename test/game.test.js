@@ -115,8 +115,10 @@ test("one student can join, decorate before opening, brew, reprice, and finish",
   assert.equal(resumed.ok, true);
   const finished = await emit(teacher, "host:finish");
   assert.equal(finished.ok, true);
+  const resetState = once(pupil, "player:state");
   const restarted = await emit(teacher, "host:reset");
   assert.equal(restarted.ok, true);
+  await resetState;
   assert.equal(latestPlayer.stock.length, 0);
   assert.equal(latestPlayer.unlocked.length, 0);
   assert.equal(latestPlayer.upgrades.length, 0);
