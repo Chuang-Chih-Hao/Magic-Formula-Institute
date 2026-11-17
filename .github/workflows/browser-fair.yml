@@ -1,0 +1,30 @@
+name: Browser smoke test - 2D Magic Fair
+on:
+  push:
+    paths:
+      - '.github/workflows/browser-fair.yml'
+  workflow_dispatch:
+jobs:
+  chromium:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Install project packages
+        run: npm install --no-audit --no-fund
+      - name: Install Playwright Chromium
+        run: |
+          npm install --no-save playwright@1.58.2
+          npx playwright install --with-deps chromium
+      - name: Real browser end-to-end fair test
+        run: node test/browser-smoke.js
+      - name: Save screenshots for visual QA
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: magic-fair-screenshots
+          path: /tmp/fair-screenshots
+          if-no-files-found: ignore
