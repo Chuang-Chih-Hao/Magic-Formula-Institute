@@ -1,0 +1,19 @@
+name: Live Gemini NPC smoke test
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - '.github/workflows/live-gemini-smoke.yml'
+jobs:
+  live-test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Install test client
+        run: npm install --no-audit --no-fund
+      - name: Verify Render health, classroom multiplayer and Gemini NPC reply
+        run: node test/remote-smoke.js
