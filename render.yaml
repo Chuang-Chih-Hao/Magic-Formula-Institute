@@ -11,4 +11,4 @@ services:
       - key: NODE_ENV
         value: production
       - key: AI_NPC_ENABLED
-        value: "false"
+        value: "true"
