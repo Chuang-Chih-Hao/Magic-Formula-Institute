@@ -162,6 +162,7 @@ function selfPublic(p) {
 function roomPublic(r) {
   return {
     code: r.code, phase: r.phase, paused: r.paused, remaining: r.remaining,
+    aiNpcMode: npcAiMode(),
     duration: r.duration, playerCount: r.players.length,
     hostOnline: !!r.hostId, players: r.players.map(playerPublic),
     recipes: RECIPES.map(({ id, name, emoji, ratio, flavor, color, story }) => ({ id, name, emoji, ratio, flavor, color, story }))
@@ -232,34 +233,70 @@ function customerVisit(io, room, p) {
   maybeAiDialogue(io, room, p, visit);
 }
 
+function npcAiMode(env = process.env) {
+  // No key or explicitly disabled: ordinary NPC dialogue remains fully playable.
+  return env.AI_NPC_ENABLED !== "false" && env.GEMINI_API_KEY && env.GEMINI_API_KEY.trim()
+    ? "gemini" : "local";
+}
+
+function geminiNpcRequest(visit, model = process.env.GEMINI_MODEL || "gemini-3.5-flash-lite") {
+  // The model ID must be a model name, never an arbitrary URL.
+  if (!/^gemini-[a-z0-9.-]+$/.test(model)) throw Error("Invalid Gemini model name");
+  const system = "你是國小六年級可愛魔法飲料店遊戲中的虛構動物顧客。只回覆一句自然、活潑、可愛的繁體中文台詞，最多30個中文字。"
+    + "符合角色喜好與交易結果：如果已購買請表現開心，沒有購買則不要說已買到。"
+    + "不要提到AI、系統、API，不要給出數學題答案，不要出現不適合小學生的內容。不要輸出引號或其他解釋。";
+  const context = "動物角色：" + visit.customer + "；偏好口味：" + visit.favorite
+    + "；可用預算：" + visit.budget + "金幣；購買結果：" + (visit.bought ? "已購買" : "未購買")
+    + "；飲品：" + (visit.itemName || "沒有商品") + "。請說一句符合情境的顧客對話。";
+  return {
+    url: "https://generativelanguage.googleapis.com/v1beta/models/" + model + ":generateContent",
+    body: {
+      systemInstruction: { parts: [{ text: system }] },
+      contents: [{ role: "user", parts: [{ text: context }] }],
+      generationConfig: {
+        temperature: 0.85,
+        maxOutputTokens: 160,
+        thinkingConfig: { thinkingLevel: "minimal" }
+      }
+    }
+  };
+}
+
+function extractGeminiNpcText(data) {
+  const parts = data && data.candidates && data.candidates[0] && data.candidates[0].content
+    && data.candidates[0].content.parts;
+  if (!Array.isArray(parts)) return "";
+  const raw = parts.filter((p) => p && !p.thought && typeof p.text === "string")
+    .map((p) => p.text).join(" ").trim();
+  return clean(raw.replace(/[\r\n\t]+/g, " "), 48)
+    .replace(/^["“”「」\s]+|["“”「」\s]+$/g, "").trim();
+}
+
 async function maybeAiDialogue(io, room, player, visit) {
-  if (process.env.AI_NPC_ENABLED !== "true" || !process.env.OPENAI_API_KEY || !player.socketId) return;
+  if (npcAiMode() !== "gemini" || !player.socketId) return;
   if (Date.now() - room.lastAIAt < 45000) return;
   room.lastAIAt = Date.now();
   try {
-    const response = await fetch("https://api.openai.com/v1/responses", {
+    const { url, body } = geminiNpcRequest(visit);
+    const response = await fetch(url, {
       method: "POST",
       headers: {
-        Authorization: "Bearer " + process.env.OPENAI_API_KEY,
+        "x-goog-api-key": process.env.GEMINI_API_KEY,
         "Content-Type": "application/json"
       },
-      body: JSON.stringify({
-        model: process.env.OPENAI_MODEL || "gpt-4o-mini",
-        max_output_tokens: 80,
-        input: [
-          { role: "system", content: "你是國小六年級可愛飲料店遊戲中的動物 NPC。只說一句自然、溫暖、有趣的繁體中文顧客台詞，最多30個中文字，不要提 AI，不要提供數學答案，不要使用不合宜內容。不要修改購買決策。" },
-          { role: "user", content: "角色：" + visit.customer + "；喜歡：" + visit.favorite + "；預算：" + visit.budget + "元；是否購買：" + (visit.bought ? "已買" : "沒買") + "；商品：" + (visit.itemName || "沒有") }
-        ]
-      }),
-      signal: AbortSignal.timeout(5000)
+      body: JSON.stringify(body),
+      signal: AbortSignal.timeout(8000)
     });
-    if (!response.ok) return;
+    if (!response.ok) {
+      console.warn("[NPC AI] Gemini HTTP " + response.status + "; using offline dialogue.");
+      return;
+    }
     const data = await response.json();
-    const raw = data.output_text || (data.output || []).flatMap((o) => o.content || []).map((c) => c.text || "").join("");
-    const text = clean(raw, 48).replace(/[\r\n]/g, " ");
+    const text = extractGeminiNpcText(data);
     if (text && player.socketId) io.to(player.socketId).emit("npc:dialogue", { visitId: visit.id, text });
   } catch (_) {
-    // Stable local NPC dialogue remains active if the optional API is unavailable.
+    // No API key, model access, quota, or network failure may interrupt gameplay.
+    console.warn("[NPC AI] Gemini unavailable; using offline dialogue.");
   }
 }
 
@@ -267,7 +304,7 @@ function runServer(port = PORT) {
   const app = express();
   app.disable("x-powered-by");
   app.use(express.static(require("node:path").join(__dirname, "public"), { maxAge: "1h" }));
-  app.get("/health", (_req, res) => res.json({ ok: true, activeRooms: rooms.size }));
+  app.get("/health", (_req, res) => res.json({ ok: true, activeRooms: rooms.size, npcAiMode: npcAiMode() }));
   const httpServer = http.createServer(app);
   const io = new Server(httpServer, { transports: ["websocket", "polling"], maxHttpBufferSize: 1e5 });
 
@@ -525,4 +562,4 @@ function runServer(port = PORT) {
 
 if (require.main === module) runServer();
 
-module.exports = { runServer, makeQuestion, qualityFor, batchCost, purchaseChance, RECIPES, UPGRADES, newPlayer };
+module.exports = { runServer, makeQuestion, qualityFor, batchCost, purchaseChance, RECIPES, UPGRADES, newPlayer, npcAiMode, geminiNpcRequest, extractGeminiNpcText };
