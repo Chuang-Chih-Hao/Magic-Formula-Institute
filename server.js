@@ -57,7 +57,7 @@ function shuffleChoices(correct, other) {
   const distinct = [...new Set([correct, ...other].map(String))];
   let pad = 1;
   while (distinct.length < 4) {
-    const proposal = String(Number(correct) + pad * 3);
+    const proposal = Number.isFinite(Number(correct)) ? String(Number(correct) + pad * 3) : (pad + 1) + " 匙、" + (pad + 3) + " 匙";
     if (!distinct.includes(proposal)) distinct.push(proposal);
     pad++;
   }
@@ -334,7 +334,10 @@ function runServer(port = PORT) {
       return { code: r.code, token: p.token, playerId: p.id };
     });
     handle("shop:update", ({ name, theme }) => {
-      const { room, player } = own();
+      const room = roomOf();
+      const player = room.players.find((p) => p.id === socket.data.playerId && p.socketId === socket.id);
+      if (!player) throw Error("請先以學生身分加入教室。");
+      if (room.phase === "finished") throw Error("結算後不能修改店鋪。");
       const nextName = clean(name, 14);
       if (!nextName) throw Error("店名不能是空白。");
       if (!THEMES.includes(theme)) throw Error("選擇的店鋪主題不存在。");
