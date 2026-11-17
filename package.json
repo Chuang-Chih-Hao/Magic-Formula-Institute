@@ -1,12 +1,12 @@
 {
   "name": "magic-formula-institute",
-  "version": "1.0.0",
+  "version": "2.0.0",
   "private": true,
-  "description": "多人同步經營魔法飲品店的比、比值與比例教學遊戲",
+  "description": "2D多人動物魔法園遊會：先佈置三款飲品後鎖定，NPC全場自由比較購買",
   "type": "commonjs",
   "scripts": {
-    "start": "node server.js",
-    "test": "node --test test/*.test.js"
+    "start": "node fair-server.js",
+    "test": "node --test test/fair-v2.test.js test/gemini.test.js"
   },
   "engines": {
     "node": ">=20"
