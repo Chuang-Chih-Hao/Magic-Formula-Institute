@@ -9,6 +9,11 @@ const PORT = Number(process.env.PORT || 3000);
 const MAX_PLAYERS = 4;
 const INGREDIENTS = ["花露", "星糖", "月光水"];
 const THEMES = ["strawberry", "lavender", "mint", "peach"];
+const UPGRADES = [
+  { id: "flowers", name: "迎賓花圃", emoji: "🌷", cost: 40, boost: 0.03 },
+  { id: "lanterns", name: "星光燈串", emoji: "✨", cost: 70, boost: 0.05 },
+  { id: "seats", name: "甜點座位", emoji: "🪑", cost: 100, boost: 0.08 }
+];
 
 const RECIPES = [
   { id: "berry", name: "莓果初戀", emoji: "🍓", ratio: [2, 1, 1], flavor: "甜美", color: "berry", story: "酸酸甜甜的草莓雲朵，適合喜歡甜點的客人。" },
@@ -47,10 +52,10 @@ function qualityFor(mix, ratio, mystery = false, noise = 0) {
   return clamp(Math.round(100 - 142 * error - (mystery ? 19 : 0) + noise), 8, mystery ? 81 : 100);
 }
 
-function purchaseChance(item, customer) {
+function purchaseChance(item, customer, popularityBoost = 0) {
   const affinity = item.flavor === customer.favorite ? 0.13 : 0;
   const affordability = (48 - item.price) * 0.007;
-  return clamp(0.19 + (item.quality - 35) * 0.010 + affordability + affinity, 0.04, 0.96);
+  return clamp(0.19 + (item.quality - 35) * 0.010 + affordability + affinity + popularityBoost, 0.04, 0.96);
 }
 
 function shuffleChoices(correct, other) {
@@ -133,7 +138,7 @@ function newPlayer(name, token) {
     shopName: "小小魔法屋", theme: THEMES[rand(0, THEMES.length - 1)],
     coins: 150, revenue: 0, expense: 0, sales: 0, stars: 0,
     attempts: 0, correct: 0, unlocked: [],
-    stock: [], quest: null, visits: [], lastResult: null
+    stock: [], upgrades: [], quest: null, visits: [], lastResult: null
   };
 }
 
@@ -142,7 +147,7 @@ function playerPublic(p) {
     id: p.id, name: p.name, shopName: p.shopName, theme: p.theme,
     online: !!p.socketId, coins: p.coins, revenue: p.revenue,
     expense: p.expense, profit: p.revenue - p.expense,
-    sales: p.sales, stars: p.stars, correct: p.correct
+    sales: p.sales, stars: p.stars, correct: p.correct, upgrades: p.upgrades
   };
 }
 function selfPublic(p) {
@@ -190,7 +195,8 @@ function customerVisit(io, room, p) {
   const visiting = { ...customer, budget };
   const stock = p.stock.filter((s) => s.servings > 0);
   const viable = stock.filter((s) => s.price <= budget);
-  const sorted = viable.map((s) => ({ item: s, chance: purchaseChance(s, visiting) }))
+  const popularity = p.upgrades.reduce((n, id) => n + (UPGRADES.find((u) => u.id === id) || { boost: 0 }).boost, 0);
+  const sorted = viable.map((s) => ({ item: s, chance: purchaseChance(s, visiting, popularity) }))
     .sort((a, b) => b.chance - a.chance);
   const selected = sorted[0];
   const bought = !!selected && Math.random() < selected.chance;
@@ -377,6 +383,18 @@ function runServer(port = PORT) {
       updateRoom(io, room);
       return { correct };
     });
+    handle("shop:upgrade", ({ upgradeId }) => {
+      const { room, player } = own();
+      const upgrade = UPGRADES.find((u) => u.id === upgradeId);
+      if (!upgrade) throw Error("找不到這個店鋪裝飾。");
+      if (player.upgrades.includes(upgrade.id)) throw Error("你已經買過這個裝飾了。");
+      if (player.coins < upgrade.cost) throw Error("金幣不夠，先賣幾杯飲料吧！");
+      player.coins -= upgrade.cost;
+      player.expense += upgrade.cost;
+      player.upgrades.push(upgrade.id);
+      updateRoom(io, room);
+      return { name: upgrade.name, cost: upgrade.cost };
+    });
     handle("brew:create", ({ targetId, mix, price }) => {
       const { room, player } = own();
       if (!Array.isArray(mix) || mix.length !== 3 || !mix.every((n) => Number.isInteger(n) && n >= 1 && n <= 12)) {
@@ -507,4 +525,4 @@ function runServer(port = PORT) {
 
 if (require.main === module) runServer();
 
-module.exports = { runServer, makeQuestion, qualityFor, batchCost, purchaseChance, RECIPES, newPlayer };
+module.exports = { runServer, makeQuestion, qualityFor, batchCost, purchaseChance, RECIPES, UPGRADES, newPlayer };
