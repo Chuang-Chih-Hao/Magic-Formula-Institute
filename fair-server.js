@@ -19,6 +19,8 @@ const CYCLE_SECONDS=10*60;
 const FIRST_PREP_SECONDS=6*60;
 const GAME_SECONDS=30*60;
 const MAX_EVOLUTION=3;
+const WILD_RECIPE_ID="wild";
+const WILD_ODDS=[{chance:0.70,min:20,max:59},{chance:0.25,min:60,max:84},{chance:0.05,min:85,max:110}];
 const RARE_DROP_CHANCE=0.16;
 const MARKET_EVENT_INTERVAL=[28000,42000];
 const MAP={
@@ -74,6 +76,25 @@ const validMix=m=>Array.isArray(m)&&m.length===3&&m.every(n=>Number.isInteger(n)
 const recipeById=id=>RECIPES.find(r=>r.id===id);
 const decorById=id=>DECORATIONS.find(d=>d.id===id);
 const costFor=mix=>(6+mix.reduce((a,b)=>a+b,0)*2)/3;
+// Wild drinks have NO secret correct ratio: ingredients determine their flavor,
+// but the quality is a risky fixed draw performed by the authoritative server.
+const wildFlavor=mix=>{
+  const top=Math.max(...mix);
+  const index=mix.indexOf(top);
+  return ["甜美","夢幻","清爽"][index];
+};
+function rollWildQuality(random=Math.random){
+  const roll=random();
+  const bucket=roll<0.70?WILD_ODDS[0]:roll<0.95?WILD_ODDS[1]:WILD_ODDS[2];
+  return bucket.min+Math.floor(random()*(bucket.max-bucket.min+1));
+}
+const validMenu=(menu,unlocked)=>!!menu&&
+  (menu.recipeId===WILD_RECIPE_ID||unlocked.includes(menu.recipeId))&&
+  !!buildProduct(menu);
+const validThreeMenu=(menus,unlocked)=>{
+  if(!Array.isArray(menus)||menus.length!==3||menus.some(x=>!validMenu(x,unlocked)))return false;
+  return new Set(menus.map(x=>x.recipeId)).size===3;
+};
 const qualityFor=(mix,ratio)=>{
   const total=mix.reduce((a,b)=>a+b,0),expected=ratio.reduce((a,b)=>a+b,0);
   const error=mix.reduce((sum,n,i)=>sum+Math.abs(n/total-ratio[i]/expected),0);
@@ -94,8 +115,19 @@ function decorateScore(decor,customerFlavor) {
 }
 function buildProduct(menu,evolution={}){
   if(!menu||typeof menu!=="object")return null;
+  if(!validMix(menu.mix)||!Number.isInteger(menu.price)||menu.price<12||menu.price>80)return null;
+  if(menu.recipeId===WILD_RECIPE_ID){
+    const rolled=Number.isInteger(menu.wildQuality)&&menu.wildQuality>=20&&menu.wildQuality<=110;
+    return {
+      recipeId:WILD_RECIPE_ID,name:"自由調配實驗飲",emoji:"🧪",color:"#a8bee5",
+      flavor:wildFlavor(menu.mix),rare:false,wild:true,ratio:null,
+      mix:[...menu.mix],price:menu.price,baseQuality:rolled?menu.wildQuality:null,
+      quality:rolled?menu.wildQuality:null,level:0,
+      cost:cents(costFor(menu.mix))
+    };
+  }
   const recipe=recipeById(menu.recipeId);
-  if(!recipe||!validMix(menu.mix)||!Number.isInteger(menu.price)||menu.price<12||menu.price>80) return null;
+  if(!recipe)return null;
   return {
     recipeId:recipe.id,name:recipe.name,emoji:recipe.emoji,
     flavor:recipe.flavor,color:recipe.color,ratio:recipe.ratio,rare:!!recipe.rare,
@@ -116,7 +148,8 @@ function activeMarketBonus(player,now=Date.now()){
 }
 function evaluateOffer(player,npc,flavorBudget,randomJitter=0,now=Date.now()){
   let best=null;
-  for(const item of player.products.map(menu=>buildProduct(menu,player.evolution)).filter(Boolean)){
+  for(const item of player.products.map(menu=>buildProduct(menu,player.evolution))
+    .filter(item=>item&&Number.isFinite(item.quality))){
     if(!item||item.price>flavorBudget)continue;
     const quality=Math.round(item.quality*0.58);
     const affordable=Math.round(clamp((flavorBudget-item.price)/flavorBudget,0,1)*29);
@@ -440,8 +473,11 @@ function completeMissingMenuAtDeadline(p){
   }
   const valid=[];
   for(const menu of p.products){
-    if(menu&&ids.has(menu.recipeId)&&buildProduct(menu,p.evolution)&&!valid.some(x=>x.recipeId===menu.recipeId))
-      valid.push({recipeId:menu.recipeId,mix:[...menu.mix],price:menu.price});
+    if(menu&&(menu.recipeId===WILD_RECIPE_ID||ids.has(menu.recipeId))&&
+      buildProduct(menu,p.evolution)&&!valid.some(x=>x.recipeId===menu.recipeId))
+      valid.push({recipeId:menu.recipeId,mix:[...menu.mix],price:menu.price,
+        ...(menu.recipeId===WILD_RECIPE_ID&&Number.isInteger(menu.wildQuality)?
+          {wildQuality:menu.wildQuality}:{})});
   }
   for(const id of p.unlocked){
     if(valid.length===3)break;
@@ -458,8 +494,14 @@ function forceStartAfterDeadline(io,r,now=Date.now()){
   for(const p of r.players){
     if(!p.ready){
       if(r.round===1)completeMissingMenuAtDeadline(p);
-      if(p.products.length!==3||!p.products.every(x=>x&&p.unlocked.includes(x.recipeId)&&buildProduct(x,p.evolution)))
+      if(!validThreeMenu(p.products,p.unlocked))
         throw Error("Unable to complete a valid menu before forced start");
+      // A previously locked wild drink retains its existing quality if this
+      // player missed the next preparation deadline (no free reroll).
+      for(const menu of p.products){
+        if(menu.recipeId===WILD_RECIPE_ID&&!Number.isInteger(menu.wildQuality))
+          menu.wildQuality=rollWildQuality();
+      }
       p.ready=true;
     }
   }
@@ -573,7 +615,8 @@ function runServer(port=PORT){
     handle("product:set",({slot,recipeId,mix,price})=>{
       const {r,p}=setup();
       if(!Number.isInteger(slot)||slot<0||slot>2)throw Error("選擇第一至第三款商品");
-      if(!p.unlocked.includes(recipeId)||!recipeById(recipeId))throw Error("此配方尚未解鎖");
+      if(recipeId!==WILD_RECIPE_ID&&(!p.unlocked.includes(recipeId)||!recipeById(recipeId)))
+        throw Error("此配方尚未解鎖");
       if(p.products.some((x,i)=>x&&i!==slot&&x.recipeId===recipeId))throw Error("三款商品必須不同");
       if(!validMix(mix))throw Error("三項材料需各為1～12匙，總量不得超過27匙");
       if(!Number.isInteger(price)||price<12||price>80)throw Error("售價須為12～80金幣的整數");
@@ -584,10 +627,8 @@ function runServer(port=PORT){
     });
     handle("menu:save",({products})=>{
       const {r,p}=setup();
-      if(!Array.isArray(products)||products.length!==3||products.some(x=>!x||!p.unlocked.includes(x.recipeId)))
-        throw Error("請先答題解鎖並選好三款不同飲品");
-      if(new Set(products.map(x=>x.recipeId)).size!==3)
-        throw Error("同一輪不能販售重複配方");
+      if(!validThreeMenu(products,p.unlocked))
+        throw Error("請選三款不同的有效飲品，自由調配最多一款，其他飲品需解題解鎖");
       const validated=products.map(x=>buildProduct(x,p.evolution));
       if(validated.some(x=>!x))throw Error("請檢查材料比例與每杯售價");
       p.products=products.map(x=>({recipeId:x.recipeId,mix:[...x.mix],price:x.price}));
@@ -657,10 +698,19 @@ function runServer(port=PORT){
       const {r,p}=setup();
       if(!p.shopName||!THEMES.includes(p.theme))throw Error("攤位尚未完成");
       if(!Array.isArray(p.decor)||p.decor.length!==2||new Set(p.decor).size!==2)throw Error("請先選好兩件裝飾");
-      if(p.unlocked.length<3||p.products.length!==3||p.products.some(x=>!x)
-        ||new Set(p.products.map(x=>x.recipeId)).size!==3
-        ||p.products.some(x=>!p.unlocked.includes(x.recipeId)||!buildProduct(x,p.evolution)))
-        throw Error("至少答對三題，解鎖並設定三款不同的有效飲品");
+      if(!validThreeMenu(p.products,p.unlocked))
+        throw Error("請準備三款不同飲料；自由調配最多一款，其他需解題解鎖");
+      // Every wild recipe quality is rolled exactly once when locking the booth.
+      // The client may never submit a quality field; saved drafts intentionally
+      // strip wildQuality so that re-saving cannot forge/reroll its outcome.
+      for(const menu of p.products){
+        if(menu.recipeId===WILD_RECIPE_ID){
+          menu.wildQuality=rollWildQuality();
+          addEvent(r,{kind:"wild",emoji:"🧪",round:r.round,shopId:p.id,
+            message:p.shopName+" 的自由調配揭曉品質 "+menu.wildQuality+" 分！",
+            why:"品質依鎖定時的隨機結果固定一輪：70% 偏低、25% 普通、5% 優良"});
+        }
+      }
       p.ready=true;
       addEvent(r,{kind:"ready",message:p.shopName+" 已鎖定攤位，等待園遊會開市！"});
       sendState(io,r);
@@ -789,6 +839,7 @@ function runServer(port=PORT){
 }
 if(require.main===module)runServer();
 module.exports={runServer,createRoom,newPlayer,makeQuestion,qualityFor,costFor,buildProduct,evaluateOffer,
-  rankOffers,decorateScore,activeMarketBonus,pickCustomer,settleNpc,triggerMarketEvent,useMarketAction,MARKET_ACTIONS,
+  rankOffers,decorateScore,activeMarketBonus,pickCustomer,settleNpc,triggerMarketEvent,useMarketAction,
+  WILD_RECIPE_ID,WILD_ODDS,wildFlavor,rollWildQuality,validThreeMenu,MARKET_ACTIONS,
   beginMarket,completeRound,forceStartAfterDeadline,
   finalizeGame,completeMissingMenuAtDeadline,FIRST_PREP_SECONDS,GAME_SECONDS,RECIPES,DECORATIONS,MAP};
