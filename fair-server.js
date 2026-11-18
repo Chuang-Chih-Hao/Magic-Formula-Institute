@@ -14,6 +14,9 @@ const {npcAiMode,maybeAiDialogue}=require("./server");
 
 const PORT=Number(process.env.PORT||3000);
 const MAX_PLAYERS=4;
+const MARKET_SECONDS=4*60;
+const CYCLE_SECONDS=10*60;
+const MAX_EVOLUTION=3;
 const MAP={
   entry:{x:520,y:666}, hub:{x:520,y:343},
   booths:[
@@ -35,7 +38,13 @@ const RECIPES=[
   {id:"forest",name:"森林薄荷",emoji:"🌿",ratio:[1,1,3],flavor:"清爽",color:"#78cead"},
   {id:"peach",name:"蜜桃星星",emoji:"🍑",ratio:[3,2,1],flavor:"甜美",color:"#ffbc88"},
   {id:"violet",name:"紫晶夢境",emoji:"🫐",ratio:[2,3,1],flavor:"夢幻",color:"#b49be4"},
-  {id:"rainbow",name:"彩虹晨露",emoji:"🌈",ratio:[3,1,2],flavor:"夢幻",color:"#f3c86b"}
+  {id:"rainbow",name:"彩虹晨露",emoji:"🌈",ratio:[3,1,2],flavor:"夢幻",color:"#f3c86b"},
+  {id:"cocoa",name:"可可星河",emoji:"🍫",ratio:[1,3,2],flavor:"甜美",color:"#ac8071"},
+  {id:"snow",name:"雪花氣泡",emoji:"❄️",ratio:[1,3,3],flavor:"清爽",color:"#a7daeb"},
+  {id:"sun",name:"日光蜂蜜",emoji:"🍯",ratio:[2,2,3],flavor:"甜美",color:"#f5bf5e"},
+  {id:"cloud",name:"銀河奶霜",emoji:"☁️",ratio:[2,3,3],flavor:"夢幻",color:"#b9b4df"},
+  {id:"rose",name:"玫瑰泡泡",emoji:"🌹",ratio:[3,2,2],flavor:"夢幻",color:"#ed9aaf"},
+  {id:"lime",name:"綠野檸香",emoji:"🍋",ratio:[1,2,4],flavor:"清爽",color:"#b8d881"}
 ];
 const NPCS=[
  {name:"小兔米米",emoji:"🐰",kind:"rabbit",color:"#fff0e9",flavor:"甜美"},
@@ -64,9 +73,7 @@ const qualityFor=(mix,ratio)=>{
   return clamp(Math.round(100-142*error),8,100);
 };
 const cents=n=>Math.round(n*100)/100;
-const defaultProducts=()=>RECIPES.slice(0,3).map((r,i)=>({
-  recipeId:r.id,mix:r.ratio.slice(),price:[25,31,28][i]
-}));
+const blankProducts=()=>[null,null,null];
 function decorateScore(decor,customerFlavor) {
   const breakdown=[];
   let score=0;
@@ -78,19 +85,22 @@ function decorateScore(decor,customerFlavor) {
   }
   return {score,breakdown};
 }
-function buildProduct(menu){
+function buildProduct(menu,evolution={}){
+  if(!menu||typeof menu!=="object")return null;
   const recipe=recipeById(menu.recipeId);
   if(!recipe||!validMix(menu.mix)||!Number.isInteger(menu.price)||menu.price<12||menu.price>80) return null;
   return {
     recipeId:recipe.id,name:recipe.name,emoji:recipe.emoji,
     flavor:recipe.flavor,color:recipe.color,ratio:recipe.ratio,
-    mix:menu.mix.slice(),price:menu.price,quality:qualityFor(menu.mix,recipe.ratio),
+    mix:menu.mix.slice(),price:menu.price,baseQuality:qualityFor(menu.mix,recipe.ratio),
+    quality:Math.min(115,qualityFor(menu.mix,recipe.ratio)+Math.min(MAX_EVOLUTION,evolution[recipe.id]||0)*5),
+    level:Math.min(MAX_EVOLUTION,evolution[recipe.id]||0),
     cost:cents(costFor(menu.mix))
   };
 }
 function evaluateOffer(player,npc,flavorBudget,randomJitter=0){
   let best=null;
-  for(const item of player.products.map(buildProduct)){
+  for(const item of player.products.map(menu=>buildProduct(menu,player.evolution)).filter(Boolean)){
     if(!item||item.price>flavorBudget)continue;
     const quality=Math.round(item.quality*0.58);
     const affordable=Math.round(clamp((flavorBudget-item.price)/flavorBudget,0,1)*29);
@@ -112,35 +122,39 @@ function rankOffers(players,npc,budget){
 function createRoom(){
   let code;
   do {code=String(rand(100000,999999));}while(rooms.has(code));
-  const room={code,hostSecret:uid()+uid(),hostId:null,phase:"setup",duration:20*60,remaining:20*60,
-    endsAt:0,paused:false,players:[],npcs:[],events:[],spawnAt:0,lastAIAt:0,entrySeq:0,
+  const room={code,hostSecret:uid()+uid(),hostId:null,phase:"setup",round:1,
+    duration:MARKET_SECONDS,remaining:0,prepDuration:CYCLE_SECONDS-MARKET_SECONDS,
+    prepEndsAt:0,roundSummary:null,endsAt:0,paused:false,
+    players:[],npcs:[],events:[],spawnAt:0,lastAIAt:0,entrySeq:0,
     createdAt:Date.now()};
   rooms.set(code,room);return room;
 }
 function newPlayer(name){
   return {id:uid(),token:uid()+uid(),socketId:null,name:clean(name,12)||"魔法店長",
-    shopName:"我的魔法飲料屋",theme:choose(THEMES),decor:["banner","samples"],products:defaultProducts(),
-    unlocked:["berry","moon","forest"],ready:false,research:0,attempts:0,correct:0,
+    shopName:"我的魔法飲料屋",theme:choose(THEMES),decor:[],products:blankProducts(),
+    unlocked:[],evolution:{},ready:false,research:0,attempts:0,correct:0,
     question:null,questionHistory:[],result:null,
     sales:0,revenue:0,cost:0,profit:0,stars:0,visits:[]};
 }
-function productPublic(menu){return buildProduct(menu);}
+function productPublic(menu,evolution){return buildProduct(menu,evolution);}
 function playerPublic(p,i) {
   return {id:p.id,booth:i,online:!!p.socketId,name:p.name,shopName:p.shopName,theme:p.theme,
-    decor:p.decor,products:p.products.map(productPublic),ready:p.ready,
+    decor:p.decor,products:p.products.map(menu=>productPublic(menu,p.evolution)),ready:p.ready,
     revenue:cents(p.revenue),cost:cents(p.cost),profit:cents(p.profit),
     sales:p.sales,stars:p.stars,correct:p.correct};
 }
 function roomPublic(r){
-  return {code:r.code,phase:r.phase,paused:r.paused,duration:r.duration,
-    remaining:r.remaining,serverNow:Date.now(),hostOnline:!!r.hostId,
+  return {code:r.code,phase:r.phase,round:r.round,paused:r.paused,duration:r.duration,
+    prepDuration:r.prepDuration,prepRemaining:r.phase==="setup"&&r.round>1?
+      Math.max(0,Math.ceil((r.prepEndsAt-Date.now())/1000)):null,
+    roundSummary:r.roundSummary,remaining:r.remaining,serverNow:Date.now(),hostOnline:!!r.hostId,
     players:r.players.map(playerPublic),
     npcAiMode:npcAiMode(),npcs:r.npcs.map(n=>({...n})),
     events:r.events.slice(0,18),recipes:RECIPES,decorations:DECORATIONS};
 }
 function selfPublic(p){
-  return {id:p.id,name:p.name,ready:p.ready,unlocked:p.unlocked,theme:p.theme,
-    shopName:p.shopName,products:p.products.map(productPublic),decor:p.decor,
+  return {id:p.id,name:p.name,ready:p.ready,unlocked:p.unlocked,evolution:p.evolution,theme:p.theme,
+    shopName:p.shopName,products:p.products.map(menu=>productPublic(menu,p.evolution)),decor:p.decor,
     research:p.research,correct:p.correct,attempts:p.attempts,
     question:p.question ? {id:p.question.id,prompt:p.question.prompt,choices:p.question.choices,skill:p.question.skill,target:p.question.target}:null,
     result:p.result};
@@ -180,7 +194,23 @@ function pickCustomer(r){
     enterAt,decideAt:enterAt+decideAfter,leaveAt:enterAt+decideAfter+4700,
     path,shopId:winner?.player.id||null,shopIndex:lastShop,
     chosenProduct:winner?.offer?.item?.recipeId||null,
-    stage:"wandering",speech:"想找一杯"+profile.flavor+"的飲料！",
+    stage:"wandering",speech:choose([
+      "想喝一杯"+profile.flavor+"的魔法飲料！",
+      "這裡有好多攤位，先走走看～",
+      "希望能找到好喝又不太貴的！",
+      "我的零用錢只有"+budget+"，要精打細算。",
+      "不知道今天哪間店會有驚喜？"
+    ]),
+    thoughts:[
+      "先看看招牌，哪家比較有特色呢？",
+      "嗯～這杯調配的品質如何？",
+      "價錢和味道，我都想比較一下！",
+      "如果口味對了，我就很心動！",
+      "會不會有甜甜的驚喜呀？",
+      "那個裝飾好特別！店裡賣什麼？",
+      "我想找最值得買的魔法特調。",
+      "真難選，還有其他攤位嗎？"
+    ],
     bought:false,visitorScores:offers.map(o=>({
       shopName:o.player.shopName,shopId:o.player.id,score:o.offer.score,
       product:o.offer.item.name,price:o.offer.item.price,quality:o.offer.item.quality
@@ -204,18 +234,34 @@ function settleNpc(io,r,n) {
     p.profit=cents(p.revenue-p.cost);
     if(item.quality>=88)p.stars++;
     n.speech="買了"+item.name+"！好期待！";
-  } else n.speech=offer?"差一點點心動，這回先不買。":"今天沒有適合預算的飲料。";
+  }else if(!offer){
+    n.reason="超過預算：店裡沒有價格符合預算的飲料";
+    n.speech=choose(["哎呀，今天的零用錢不夠！","每杯都超過預算，下次再來。","價格有點高，今天先不買囉。"]);
+  }else if(offer.item.quality<65){
+    n.reason="飲料品質偏低，比例調製需要改善";
+    n.speech=choose(["這杯比例好像怪怪的…","喝起來不夠理想，先看看別的。","我希望飲料的品質再好一點！"]);
+  }else if(offer.item.price>n.budget*0.8){
+    n.reason="售價接近預算上限，覺得不夠划算";
+    n.speech=choose(["想買，但價格讓我有點猶豫。","這杯有點貴，我還想留些零用錢！","今天先省下金幣好不好呢？"]);
+  }else if(!offer.flavorMatch){
+    n.reason="飲料口味與顧客偏好不同";
+    n.speech=choose(["我想找不一樣的口味。","這個味道不是今天想喝的耶！","好像不是我最喜歡的口味。"]);
+  }else{
+    n.reason="綜合比較後仍不夠心動";
+    n.speech=choose(["再想想，下次可能會買！","雖然不錯，我想再逛一下。","選擇太多了，我今天先不買。"]);
+  }
+  if(bought)n.reason=offer.item.quality>=105?"進化飲品品質出色，且有吸引力":"品質、售價與偏好綜合評分有吸引力";
   const explanation=bought
     ? "品質"+offer.item.quality+"、售價"+offer.item.price+
       "；"+(offer.flavorMatch?"口味符合偏好；":"偏好口味不同；")+
       (offer.bonusText||"沒有裝飾加成")
-    : offer ? "綜合評分"+offer.score+"，但這次沒有成交" : "各店商品超出預算或無販售選項";
+    : n.reason+(offer?"；綜合評分 "+offer.score:"");
   const message=bought ? n.name+" 在「"+p.shopName+"」買了 "+offer.item.name+"（"+offer.item.price+"金幣）"
     : n.name+" 逛完小鎮後沒有購買";
   const event={npcId:n.id,kind:bought?"sale":"leave",emoji:n.emoji,
     shopId:p?.id||null,shopName:p?.shopName||null,
     product:bought?offer.item.name:null,price:bought?offer.item.price:0,
-    message,why:explanation,budget:n.budget,flavor:n.flavor};
+    message,why:explanation,reason:n.reason,dialogue:n.speech,budget:n.budget,flavor:n.flavor,round:r.round};
   addEvent(r,event);
   io.to(r.code).emit("fair:trade",event);
   if(p){
@@ -227,9 +273,35 @@ function settleNpc(io,r,n) {
     const fakePlayer={socketId:r.code};
     maybeAiDialogue(io,r,fakePlayer,{
       id:n.id,customer:n.name,emoji:n.emoji,favorite:n.flavor,budget:n.budget,
-      bought,itemName:bought?offer.item.name:null,paid:bought?offer.item.price:0,text:n.speech
+      bought,itemName:bought?offer.item.name:null,paid:bought?offer.item.price:0,text:n.speech,reason:n.reason,stage:bought?"已購買":"未購買"
     });
   }
+}
+function beginMarket(io,r,now){
+  if(r.phase!=="setup"||!r.players.length)return;
+  if(r.round===1&&!r.players.every(p=>p.ready))return;
+  r.phase="market";r.paused=false;r.remaining=r.duration;r.endsAt=now+r.duration*1000;
+  r.spawnAt=now+1200;r.lastAIAt=0;r.npcs=[];r.roundSummary=null;
+  addEvent(r,{kind:"start",round:r.round,message:"🎉 第 "+r.round+" 輪開市！四分鐘的動物園遊會開始了！"});
+  sendState(io,r);
+}
+function completeRound(io,r,now,final=false){
+  if(r.phase!=="market")return;
+  for(const n of r.npcs)if(n.stage==="wandering")settleNpc(io,r,n);
+  const summary={round:r.round,top:[...r.players].sort((a,b)=>b.profit-a.profit)
+    .map(p=>({shopName:p.shopName,profit:cents(p.profit),sales:p.sales}))};
+  r.npcs=[];r.paused=false;r.roundSummary=summary;
+  if(final){
+    r.phase="finished";r.remaining=0;
+    addEvent(r,{kind:"finish",round:r.round,message:"🏆 教師宣布園遊會閉幕，總成績結算！"});
+  }else{
+    r.round++;
+    r.phase="setup";r.prepEndsAt=now+r.prepDuration*1000;r.remaining=r.prepDuration;
+    for(const p of r.players){p.ready=false;p.question=null;p.result=null;}
+    addEvent(r,{kind:"round",round:r.round,message:"🧪 第 "+(r.round-1)+" 輪結束！請換三款飲品或讓配方進化。"
+      +"第 "+r.round+" 輪準備限時 "+Math.round(r.prepDuration/60)+" 分鐘。"});
+  }
+  sendState(io,r);
 }
 function runServer(port=PORT){
   const app=express();
@@ -313,20 +385,21 @@ function runServer(port=PORT){
       const {r,p}=setup();
       if(!Number.isInteger(slot)||slot<0||slot>2)throw Error("選擇第一至第三款商品");
       if(!p.unlocked.includes(recipeId)||!recipeById(recipeId))throw Error("此配方尚未解鎖");
-      if(p.products.some((x,i)=>i!==slot&&x.recipeId===recipeId))throw Error("三款商品必須不同");
+      if(p.products.some((x,i)=>x&&i!==slot&&x.recipeId===recipeId))throw Error("三款商品必須不同");
       if(!validMix(mix))throw Error("三項材料需各為1～12匙，總量不得超過27匙");
       if(!Number.isInteger(price)||price<12||price>80)throw Error("售價須為12～80金幣的整數");
       p.products[slot]={recipeId,mix:[...mix],price};
       p.result=null;
       sendState(io,r);
-      return {quality:qualityFor(mix,recipeById(recipeId).ratio),cost:cents(costFor(mix))};
+      return {quality:buildProduct(p.products[slot],p.evolution).quality,cost:cents(costFor(mix))};
     });
     handle("quest:get",({target})=>{
       const {r,p}=setup();
-      if(target!=="practice"&&(!recipeById(target)||p.unlocked.includes(target)))
-        throw Error("這張配方無需解鎖");
+      if(target!=="practice"&&!recipeById(target))throw Error("配方不存在");
+      if(target!=="practice"&&(p.evolution[target]||0)>=MAX_EVOLUTION)throw Error("這個配方已進化到最高等級");
       const q=makeQuestion(p.questionHistory);
-      p.question={...q,target};
+      p.question={...q,target,action:target==="practice"?"practice":
+        p.unlocked.includes(target)?"evolve":"unlock"};
       p.result=null;
       sendState(io,r);
     });
@@ -338,12 +411,15 @@ function runServer(port=PORT){
       p.attempts++;
       if(correct){
         p.correct++;p.research+=2;
-        if(q.target!=="practice"&&!p.unlocked.includes(q.target))p.unlocked.push(q.target);
+        if(q.action==="unlock"&&!p.unlocked.includes(q.target))p.unlocked.push(q.target);
+        if(q.action==="evolve")p.evolution[q.target]=Math.min(MAX_EVOLUTION,(p.evolution[q.target]||0)+1);
       }
       p.questionHistory.push({prompt:q.prompt,type:q.type});
       p.questionHistory=p.questionHistory.slice(-80);
-      p.result={correct,answer:q.answer,explanation:q.explanation,
-        reward:correct?2:0,unlocked:correct&&q.target!=="practice"?q.target:null};
+      p.result={correct,answer:q.answer,explanation:q.explanation,action:q.action,
+        reward:correct?2:0,unlocked:correct&&q.action==="unlock"?q.target:null,
+        evolved:correct&&q.action==="evolve"?q.target:null,
+        level:q.target==="practice"?0:p.evolution[q.target]||0};
       p.question=null;
       sendState(io,r);
       return {correct};
@@ -352,25 +428,26 @@ function runServer(port=PORT){
       const {r,p}=setup();
       if(!p.shopName||!THEMES.includes(p.theme))throw Error("攤位尚未完成");
       if(!Array.isArray(p.decor)||p.decor.length!==2||new Set(p.decor).size!==2)throw Error("請先選好兩件裝飾");
-      if(p.products.length!==3||new Set(p.products.map(x=>x.recipeId)).size!==3
-        ||p.products.some(x=>!buildProduct(x)))throw Error("必須準備三款不同的有效飲品");
+      if(p.unlocked.length<3||p.products.length!==3||p.products.some(x=>!x)
+        ||new Set(p.products.map(x=>x.recipeId)).size!==3
+        ||p.products.some(x=>!p.unlocked.includes(x.recipeId)||!buildProduct(x,p.evolution)))
+        throw Error("至少答對三題，解鎖並設定三款不同的有效飲品");
       p.ready=true;
       addEvent(r,{kind:"ready",message:p.shopName+" 已鎖定攤位，等待園遊會開市！"});
       sendState(io,r);
+      if(r.round>1&&r.players.every(x=>x.ready))beginMarket(io,r,Date.now());
     });
     handle("host:duration",({minutes})=>{
       const r=host();
-      if(r.phase!=="setup"||![10,15,20,25,30].includes(minutes))throw Error("準備期可選10至30分鐘");
-      r.duration=minutes*60;r.remaining=r.duration;sendState(io,r);
+      if(r.phase!=="setup"||r.round>1||![3,4,5].includes(minutes))throw Error("第一輪可選 3、4 或 5 分鐘的販售期");
+      r.duration=minutes*60;r.prepDuration=CYCLE_SECONDS-r.duration;
+      sendState(io,r);
     });
     handle("host:start",()=>{
       const r=host();
       if(r.phase!=="setup"||r.players.length===0)throw Error("請先讓學生進入教室");
       if(!r.players.every(p=>p.ready))throw Error("仍有學生尚未鎖定攤位");
-      r.phase="market";r.endsAt=Date.now()+r.remaining*1000;r.paused=false;
-      r.spawnAt=Date.now()+2600;r.lastAIAt=0;
-      addEvent(r,{kind:"start",message:"🎉 魔法園遊會正式開市！動物顧客正準備入場。"});
-      sendState(io,r);
+      beginMarket(io,r,Date.now());
     });
     handle("host:pause",()=>{
       const r=host();
@@ -390,16 +467,15 @@ function runServer(port=PORT){
     });
     handle("host:finish",()=>{
       const r=host();if(r.phase!=="market")throw Error("尚未開市");
-      r.phase="finished";r.paused=false;r.remaining=0;r.npcs=[];
-      addEvent(r,{kind:"finish",message:"🏆 園遊會結束，開始公布店鋪成績！"});
-      sendState(io,r);
+      completeRound(io,r,Date.now(),true);
     });
     handle("host:reset",()=>{
       const r=host();
-      r.phase="setup";r.paused=false;r.remaining=r.duration;r.npcs=[];r.events=[];
+      r.phase="setup";r.round=1;r.paused=false;r.remaining=0;r.prepEndsAt=0;
+      r.npcs=[];r.events=[];r.roundSummary=null;
       for(const p of r.players){
         Object.assign(p,{ready:false,sales:0,revenue:0,cost:0,profit:0,stars:0,
-          products:defaultProducts(),decor:["banner","samples"],unlocked:["berry","moon","forest"],
+          products:blankProducts(),decor:[],unlocked:[],evolution:{},
           research:0,correct:0,attempts:0,question:null,questionHistory:[],result:null,visits:[]});
       }
       sendState(io,r);
@@ -418,15 +494,21 @@ function runServer(port=PORT){
     const now=Date.now();
     for(const [id,r] of rooms){
       if(now-r.createdAt>6*3600000){rooms.delete(id);continue;}
+      if(r.phase==="setup"&&r.round>1){
+        r.remaining=Math.max(0,Math.ceil((r.prepEndsAt-now)/1000));
+        if(r.remaining===0){
+          r.players.filter(p=>!p.ready).forEach(p=>{p.ready=true;});
+          addEvent(r,{kind:"autolock",message:"⏰ 本輪準備時間到！尚未鎖定的店鋪已沿用上輪已儲存的商品。"});
+          beginMarket(io,r,now);
+        }
+      }
       if(r.phase==="market"&&!r.paused){
         r.remaining=Math.max(0,Math.ceil((r.endsAt-now)/1000));
         if(r.remaining===0){
-          r.phase="finished";r.npcs=[];
-          addEvent(r,{kind:"finish",message:"🏆 時間到！魔法園遊會閉幕。"});
-          sendState(io,r);
+          completeRound(io,r,now,false);
         }else{
           let changed=false;
-          if(now>=r.spawnAt&&r.players.length>0){
+          if(now>=r.spawnAt&&r.players.length>0&&r.remaining>25){
             r.npcs.push(pickCustomer(r));r.npcs=r.npcs.slice(-10);
             r.spawnAt=now+rand(3200,4700);changed=true;
           }
@@ -439,7 +521,7 @@ function runServer(port=PORT){
           if(changed)sendState(io,r);
         }
       }
-      io.to(id).emit("room:clock",{remaining:r.remaining,phase:r.phase,paused:r.paused,serverNow:now});
+      io.to(id).emit("room:clock",{remaining:r.remaining,phase:r.phase,round:r.round,paused:r.paused,serverNow:now});
     }
   },1000);
   interval.unref();
