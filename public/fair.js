@@ -414,11 +414,9 @@
       if(!sure)return;
       send("shop:update",{shopName:draft.shopName,theme:draft.theme},()=>{
         send("decor:set",{decor:draft.decor},()=>{
-          const saveSlot=i=>{
-            if(i>=3)return send("player:lock",{},()=>toast("🔒 三款飲料與裝飾已封存！"));
-            send("product:set",{slot:i,...draft.products[i]},()=>saveSlot(i+1));
-          };
-          saveSlot(0);
+          send("menu:save",{products:draft.products},()=>{
+            send("player:lock",{},()=>toast("🔒 三款飲料已整組封存，下一輪才能修改！"));
+          });
         });
       });
       return;
