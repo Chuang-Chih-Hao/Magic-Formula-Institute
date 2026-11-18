@@ -8,7 +8,8 @@ const {
   makeQuestion,qualityFor,costFor,buildProduct,rankOffers,decorateScore,
   newPlayer,createRoom,runServer,pickCustomer,settleNpc,beginMarket,completeRound,
   forceStartAfterDeadline,finalizeGame,FIRST_PREP_SECONDS,GAME_SECONDS,RECIPES,DECORATIONS,
-  activeMarketBonus,evaluateOffer,triggerMarketEvent,useMarketAction,MARKET_ACTIONS
+  activeMarketBonus,evaluateOffer,triggerMarketEvent,useMarketAction,MARKET_ACTIONS,
+  WILD_RECIPE_ID,WILD_ODDS,wildFlavor,rollWildQuality,validThreeMenu
 }=require("../fair-server");
 
 function cannedMenu() {
@@ -57,6 +58,54 @@ test("12 ordinary and 3 legendary recipes are locked initially; evolution improv
   assert.equal(buildProduct(mix,{berry:99}).quality,115);
   assert.equal(buildProduct(null,{}),null);
   assert.equal(buildProduct({...mix,price:100}),null);
+});
+
+test("one free-mix drink uses server-side odds and a fixed quality for every customer",()=>{
+  assert.equal(WILD_RECIPE_ID,"wild");
+  assert.deepEqual(WILD_ODDS.map(x=>x.chance),[0.7,0.25,0.05]);
+  const draw=(chance,position=0.5)=>{
+    const rolls=[chance,position];return rollWildQuality(()=>rolls.shift());
+  };
+  assert.equal(draw(0,0),20);
+  assert.equal(draw(0.699,0.999),59);
+  assert.equal(draw(0.7,0),60);
+  assert.equal(draw(0.949,0.999),84);
+  assert.equal(draw(0.95,0),85);
+  assert.equal(draw(0.999,0.999),110);
+  assert.equal(wildFlavor([5,1,2]),"甜美");
+  assert.equal(wildFlavor([1,6,2]),"夢幻");
+  assert.equal(wildFlavor([1,2,7]),"清爽");
+  const wild={recipeId:"wild",mix:[2,3,4],price:26};
+  const before=buildProduct(wild);
+  assert.equal(before.quality,null,"not known until locking");
+  assert.equal(before.flavor,"清爽");
+  const after=buildProduct({...wild,wildQuality:101});
+  assert.equal(after.quality,101);
+  assert.equal(after.cost,before.cost,"quality does not change materials cost");
+  assert.equal(buildProduct({...wild,price:99}),null);
+  assert.equal(buildProduct({...wild,mix:[1,2,28]}),null);
+  assert.equal(validThreeMenu([
+    {recipeId:"berry",mix:[2,1,1],price:30},
+    wild,
+    {recipeId:"moon",mix:[1,2,3],price:30}
+  ],["berry","moon"]),true,"free mix counts as one of three and needs two math unlocks");
+  assert.equal(validThreeMenu([wild,wild,{recipeId:"berry",mix:[2,1,1],price:30}],["berry"]),false,
+    "only one free mix can appear in the three-drink menu");
+  assert.equal(validThreeMenu([wild,{recipeId:"berry",mix:[2,1,1],price:30},
+    {recipeId:"forest",mix:[1,1,3],price:30}],["berry"]),false,
+    "free mix does not bypass other locked recipes");
+  const p=newPlayer("學生"),npc={flavor:"清爽"};
+  p.unlocked=["berry","moon"];
+  p.decor=["banner","samples"];
+  p.products=[
+    {recipeId:"berry",mix:[2,1,1],price:35},
+    {...wild,wildQuality:101},
+    {recipeId:"moon",mix:[1,2,3],price:35}
+  ];
+  const first=evaluateOffer(p,npc,70,0);
+  const second=evaluateOffer(p,npc,70,0);
+  assert.equal(first.score,second.score,"quality is never rolled for each visitor");
+  assert.equal(p.products[1].wildQuality,101);
 });
 
 test("rare challenges always require multiple steps, never reveal answers, and fit the four choices",()=>{
@@ -333,7 +382,28 @@ test("teacher and 4 pupils must unlock 3 different drinks, lock, then start the 
         {recipeId:"moon",mix:[1,2,3],price:30},
         {recipeId:"forest",mix:[1,1,3],price:28}
       ]})).ok,false,"duplicate menu must be rejected");
+      if(i===1){
+        const wild={recipeId:"wild",mix:[2,5,3],price:31};
+        assert.equal((await rpc(socket,"menu:save",{products:[
+          {recipeId:"moon",mix:[1,2,3],price:30},
+          {recipeId:"berry",mix:[2,1,1],price:24},wild
+        ]})).ok,true);
+        assert.equal(states[i-1].products[2].quality,null,
+          "quality must remain unknown before lock");
+        assert.equal((await rpc(socket,"product:set",{slot:2,...wild,wildQuality:110})).ok,true,
+          "a malicious quality payload must never be trusted");
+        assert.equal(states[i-1].products[2].quality,null);
+      }
       assert.equal((await rpc(socket,"player:lock")).ok,true);
+      if(i===1){
+        assert.equal(states[i-1].products[2].quality,20,
+          "one forced low roll is applied at the moment of locking");
+        assert.equal((await rpc(socket,"menu:save",{products:[
+          {recipeId:"moon",mix:[1,2,3],price:30},
+          {recipeId:"berry",mix:[2,1,1],price:24},
+          {recipeId:"wild",mix:[2,5,3],price:31,wildQuality:110}
+        ]})).ok,false,"no re-rolling after the booth is locked");
+      }
       assert.equal((await rpc(socket,"product:set",{slot:0,recipeId:"berry",mix:[2,1,1],price:15})).ok,false);
     }
   }finally{Math.random=oldRandom;}
