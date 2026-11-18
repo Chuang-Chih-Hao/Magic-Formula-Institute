@@ -326,6 +326,42 @@
       +'<div class="info-decor">'+p.decor.map(id=>{const d=decorateById(id);return d?'<div><span>'+d.emoji+' '+d.name+'</span><small>'+d.desc+'</small></div>':"";}).join("")+'</div>'
       +'<div class="menu-board">'+p.products.map(pr=>'<div class="board-drink"><span>'+pr.emoji+'</span><span><b>'+esc(pr.name)+'</b><small>品質 '+pr.quality+' · '+pr.flavor+'</small></span><strong>🪙 '+pr.price+'</strong></div>').join("")+'</div>';
   }
+  function currentMarketEvents(){
+    const now=localTime();
+    return (room?.activeEvents||[]).filter(e=>e.expiresAt>now);
+  }
+  function eventBanner(){
+    const events=currentMarketEvents();
+    if(!events.length)return '<div class="event-stage quiet">'
+      +'🌼 園遊會正營業中！神秘事件隨時可能發生，留意顧客與攤位變化。</div>';
+    return '<div class="event-stage"><span class="event-spark">🎇 隨機事件發生中</span>'
+      +events.map(e=>'<div class="event-stage-item"><b>'+esc(e.emoji)+' '+esc(e.name||"園遊會驚喜")+'</b>'
+      +'<span>'+esc(e.message)+'</span><small>'+esc(e.why)+'</small></div>').join("")
+      +'</div>';
+  }
+  function marketActionsPanel(){
+    if(!me||isTeacher()||room.phase!=="market")return
+      '<div class="empty-feed">🎓 老師可以觀察學生的即時經營決策；學生可自行花金幣攬客、防護或舉辦試喝。</div>';
+    const p=currentPlayer();
+    if(!p)return '<div class="empty-feed">尚未找到你的攤位</div>';
+    const now=localTime(),boost=p.boosts||{};
+    const cooldown=Math.max(0,Math.ceil(((boost.marketActionUntil||0)-now)/1000));
+    const actions=[
+      {id:"advertise",emoji:"📣",name:"魔法招牌攬客",price:18,detail:"60 秒吸引力 +27",field:"promoUntil"},
+      {id:"tasting",emoji:"🥤",name:"開放試喝",price:12,detail:"60 秒吸引力 +15",field:"tastingUntil"},
+      {id:"shield",emoji:"🛡️",name:"星光防護罩",price:15,detail:"90 秒擋一次壞天氣",field:"shieldUntil"}
+    ];
+    return '<div class="market-actions"><div class="action-cash">🪙 可用淨利：<strong>'+fmtMoney(p.profit)+'</strong>'
+      +(cooldown?'<span>⏳ 下次操作 '+cooldown+' 秒</span>':"")+'</div>'
+      +actions.map(a=>{
+        const active=Math.ceil(Math.max(0,(boost[a.field]||0)-now)/1000);
+        const disabled=room.paused||cooldown>0||p.profit<a.price;
+        return '<button class="market-action '+(active>0?"is-active":"")+'" data-action="market-action" data-type="'+a.id+'" '
+          +(disabled?'disabled':'')+'><span class="market-action-icon">'+a.emoji+'</span>'
+          +'<span><b>'+a.name+'</b><small>'+a.detail+(active?' · 生效中 '+active+' 秒':"")+'</small></span>'
+          +'<strong>🪙 '+a.price+'</strong></button>';
+      }).join("")+'</div>';
+  }
   function marketPage(){
     renderMode="market";
     if(selection>=room.players.length)selection=0;
@@ -335,12 +371,15 @@
         +'<h1>🎪 '+roundText()+' · 動物小鎮園遊會</h1><p>販售 '+Math.round(room.duration/60)+' 分鐘，結束後自動進入下輪商品調整，約每 10 分鐘重複一次！</p></div>'
         +(isTeacher()?hostActions():'<span class="pill-big">🧙 一起看顧客挑哪家！</span>')+'</div>')
       +(room.paused?'<div class="pause-alert">⏸ 老師暫停園遊會，顧客和計時器也已暫停。</div>':"")
+      +'<div id="eventStage">'+eventBanner()+'</div>'
       +'<div class="market-layout">'
       +'<section class="market-main surface"><div class="section-title"><div><h2>🗺️ 全場共享地圖</h2><p>點選攤位可查看三款飲品與人氣裝飾</p></div><span class="pill">🐾 正在逛街：<b id="npcCount">0</b></span></div>'
       +'<div class="map-viewport"><canvas id="fairCanvas" width="1040" height="680" tabindex="0" aria-label="魔法園遊會地圖，四間攤位和走動的動物顧客"></canvas></div>'
       +'<div class="map-legend"><span>🐾 顧客走動</span><span>🍹 停攤比較</span><span>💛 決定購買</span><span>💰 賺取淨利</span></div>'
       +'<div class="surface-inset"><div class="section-title"><h2>🔍 目前查看的攤位</h2><small>點地圖切換</small></div><div id="boothDetails">'+selectedBoothCard()+'</div></div></section>'
-      +'<aside class="market-side"><div class="surface"><div class="section-title"><h2>🔎 顧客正在比較什麼？</h2><span class="pill">點地圖上的動物切換</span></div><div id="npcComparison">'+compareNpc()+'</div></div>'
+      +'<aside class="market-side"><div class="surface"><div class="section-title"><h2>🎲 我的營業策略</h2><span class="pill">營業中可互動</span></div>'
+      +'<div id="marketActions">'+marketActionsPanel()+'</div></div>'
+      +'<div class="surface"><div class="section-title"><h2>🔎 顧客正在比較什麼？</h2><span class="pill">點地圖上的動物切換</span></div><div id="npcComparison">'+compareNpc()+'</div></div>'
       +'<div class="surface"><div class="section-title"><h2>🏆 即時淨利排行</h2><span class="pill">全場同步</span></div><div id="leaderboard">'+scoreboard()+'</div>'
       +'<p class="hint">每賣出一杯會扣除那杯的材料成本。裝飾影響 NPC 比較分數，而不是直接增加金幣。</p></div>'
       +'<div class="surface"><div class="section-title"><h2>📣 顧客園遊會日記</h2><span class="pill">即時成交原因</span></div>'
@@ -354,6 +393,8 @@
     if($("eventFeed"))$("eventFeed").innerHTML=eventFeed();
     if($("boothDetails"))$("boothDetails").innerHTML=selectedBoothCard();
     if($("npcComparison"))$("npcComparison").innerHTML=compareNpc();
+    if($("eventStage"))$("eventStage").innerHTML=eventBanner();
+    if($("marketActions"))$("marketActions").innerHTML=marketActionsPanel();
     setText("npcCount",room.npcs.filter(n=>n.stage==="wandering").length);
     setText("timeText",timeText());
     setText("overallText",overallText());
@@ -471,6 +512,10 @@
       });
       return;
     }
+    if(action==="market-action"){
+      return send("market:action",{type:b.dataset.type},r=>
+        toast("🎉 行動成功！已從淨利扣除花費，顧客吸引力會跟著改變。"));
+    }
     if(action==="start")return send("host:start",{},()=>toast("🎉 魔法園遊會正式開市！"));
     if(action==="pause")return send("host:pause");
     if(action==="resume")return send("host:resume");
@@ -562,6 +607,10 @@
   });
   socket.on("fair:trade",evt=>{
     if(evt.kind==="sale")toast("💰 "+evt.message);
+  });
+  socket.on("fair:event",evt=>{
+    if(evt.kind==="market-event")toast((evt.emoji||"🎪")+" "+evt.message);
+    if(evt.kind==="action"&&me&&evt.shopId===me.id)toast("📣 "+evt.message);
   });
   socket.on("npc:dialogue",data=>{
     npcLines[data.visitId]=data.text;
