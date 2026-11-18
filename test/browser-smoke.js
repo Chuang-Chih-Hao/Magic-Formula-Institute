@@ -197,7 +197,21 @@ async function main(){
       "the random event uses a large spotlight icon");
     assert.ok((await teacher.locator(".event-stage-main strong").textContent()).trim().length>=4);
     assert.ok(await teacher.locator(".event-stage-impact").isVisible());
-    console.log("PASS a highly visible animated random-event spotlight and effect description");
+    const visual=await teacher.locator(".event-stage.active").evaluate(el=>{
+      const title=el.querySelector(".event-stage-main>strong");
+      const icon=el.querySelector(".event-stage-icon");
+      return {
+        border:parseFloat(getComputedStyle(el).borderTopWidth),
+        titleFont:parseFloat(getComputedStyle(title).fontSize),
+        iconFont:parseFloat(getComputedStyle(icon).fontSize),
+        impact:!!el.querySelector(".event-stage-impact strong"),
+        seconds:!!el.querySelector(".event-time-left")
+      };
+    });
+    assert.ok(visual.border>=3&&visual.titleFont>=25&&visual.iconFont>=55);
+    assert.equal(visual.impact,true);
+    assert.equal(visual.seconds,true);
+    console.log("PASS full-size event title, large animated symbol, impact badge and live countdown");
     await teacher.screenshot({path:folder+"/random-event.png",fullPage:true});
     await teacher.screenshot({path:folder+"/transactions.png",fullPage:true});
     assert.deepEqual(errors,[],"frontend should have no uncaught browser exceptions");
