@@ -356,7 +356,7 @@
     const latest=events[events.length-1];
     const shop=room.players.find(p=>p.id===latest.shopId);
     const seconds=Math.max(0,Math.ceil((latest.expiresAt-now)/1000));
-    return '<div class="event-stage active">'
+    return '<div class="event-stage active" data-event-start="'+Number(latest.startedAt||0)+'">'
       +'<div class="event-stage-icon" aria-hidden="true">'+esc(latest.emoji||"✨")+'</div>'
       +'<div class="event-stage-main"><span class="event-spark">⚡ 園遊會突發大事件 ⚡</span>'
       +'<strong>'+esc(latest.name||"魔法事件")+'</strong>'
@@ -366,7 +366,7 @@
         latest.type==="golden"?"🪙 +"+latest.amount:latest.type==="rush"?"🐾 顧客變多":
         latest.type==="parade"?"🎈 "+esc(latest.flavor)+"口味":
         latest.type==="scroll"?"📜 傳說題":"✨ 驚喜")+'</strong>'
-      +'<small>剩餘 '+seconds+' 秒</small></div></div>';
+      +'<small>剩餘 <b class="event-time-left">'+seconds+'</b> 秒</small></div></div>';
   }
   function marketActionsPanel(){
     if(!me||isTeacher()||room.phase!=="market")return
@@ -424,7 +424,15 @@
     if($("eventFeed"))$("eventFeed").innerHTML=eventFeed();
     if($("boothDetails"))$("boothDetails").innerHTML=selectedBoothCard();
     if($("npcComparison"))$("npcComparison").innerHTML=compareNpc();
-    if($("eventStage"))$("eventStage").innerHTML=eventBanner();
+    const stage=$("eventStage");
+    if(stage){
+      const latest=currentMarketEvents().slice(-1)[0];
+      const stamp=String(Number(latest?.startedAt||0));
+      if(stage.querySelector(".event-stage")?.dataset.eventStart!==stamp)
+        stage.innerHTML=eventBanner();
+      const counter=stage.querySelector(".event-time-left");
+      if(counter&&latest)counter.textContent=Math.max(0,Math.ceil((latest.expiresAt-localTime())/1000));
+    }
     if($("marketActions"))$("marketActions").innerHTML=marketActionsPanel();
     setText("npcCount",room.npcs.filter(n=>n.stage==="wandering").length);
     setText("timeText",timeText());
