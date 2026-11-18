@@ -16,10 +16,16 @@ jobs:
           node-version: '22'
       - name: Install project packages
         run: npm install --no-audit --no-fund
-      - name: Install Playwright Chromium
+      - name: Prepare browser test client
         run: |
           npm install --no-save playwright@1.58.2
-          npx playwright install --with-deps chromium
+          if command -v google-chrome >/dev/null 2>&1; then
+            echo "CHROME_EXECUTABLE=$(command -v google-chrome)" >> "$GITHUB_ENV"
+          elif command -v chromium >/dev/null 2>&1; then
+            echo "CHROME_EXECUTABLE=$(command -v chromium)" >> "$GITHUB_ENV"
+          else
+            npx playwright install chromium
+          fi
       - name: Real browser end-to-end fair test
         run: node test/browser-smoke.js
       - name: Save screenshots for visual QA
