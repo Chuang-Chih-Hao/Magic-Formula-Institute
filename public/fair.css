@@ -353,3 +353,11 @@ html,body{width:100%;height:100%;margin:0;overflow:hidden}
 #app .unlock-card{min-height:105px}
 #app .unlock-card.unlocked{opacity:1;border-color:#a4d2a5;background:#eff8ea}
 #app .unlock-card:disabled{opacity:.8;cursor:default}
+
+#app .round-score{flex:none;display:flex;align-items:center;gap:13px;overflow:hidden;
+  min-height:45px;margin:0 0 12px;padding:7px 14px;background:#fff7dd;
+  border:2px solid #e4c9a6;border-radius:17px;color:#956d59;font-size:12px;white-space:nowrap}
+#app .round-score>b{color:#c78066;font-size:16px}
+#app .round-score span{background:#fffcf0;border-radius:8px;padding:4px 7px}
+#app .round-score strong{color:#55936b}
+#app .round-score small{margin-left:auto;font-size:10px}
