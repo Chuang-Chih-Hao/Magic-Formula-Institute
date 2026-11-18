@@ -159,6 +159,12 @@ async function main(){
     await student.locator("#fairCanvas").waitFor({timeout:12000});
     assert.equal(await student.locator(".market-action").count(),3,
       "a pupil can choose paid market actions instead of only waiting");
+    assert.match(await student.locator('[data-action="market-action"][data-type="advertise"]').textContent(),
+      /額外 NPC/,"advertising's unique purpose is visible");
+    assert.match(await student.locator('[data-action="market-action"][data-type="tasting"]').textContent(),
+      /成交率/,"tasting's unique purpose is visible");
+    assert.equal(await student.locator(".action-outcomes").count(),1,
+      "marketing results are quantified separately on screen");
     assert.ok(await teacher.locator("#eventStage").isVisible(),
       "random market events are advertised to all pupils");
     await teacher.waitForFunction(()=>{
@@ -186,9 +192,12 @@ async function main(){
     assert.ok(await teacher.locator("#leaderboard .rank-entry").count()>=1);
     console.log("PASS global customer decision and cross-stall comparison panel are visible");
     await teacher.waitForFunction(()=>
-      !!document.querySelector("#eventStage .event-stage-item"),null,{timeout:55000});
-    assert.ok((await teacher.locator(".event-stage-item").first().textContent()).trim().length>=5);
-    console.log("PASS a timed random market event is visible to the teacher in real time");
+      !!document.querySelector("#eventStage .event-stage.active"),null,{timeout:55000});
+    assert.ok(await teacher.locator(".event-stage-icon").isVisible(),
+      "the random event uses a large spotlight icon");
+    assert.ok((await teacher.locator(".event-stage-main strong").textContent()).trim().length>=4);
+    assert.ok(await teacher.locator(".event-stage-impact").isVisible());
+    console.log("PASS a highly visible animated random-event spotlight and effect description");
     await teacher.screenshot({path:folder+"/random-event.png",fullPage:true});
     await teacher.screenshot({path:folder+"/transactions.png",fullPage:true});
     assert.deepEqual(errors,[],"frontend should have no uncaught browser exceptions");
