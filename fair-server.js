@@ -148,7 +148,7 @@ function playerPublic(p,i) {
 function roomPublic(r){
   return {code:r.code,phase:r.phase,round:r.round,paused:r.paused,duration:r.duration,
     prepDuration:r.prepDuration,prepRemaining:r.phase==="setup"?
-      Math.max(0,Math.ceil((r.prepEndsAt||Date.now()+FIRST_PREP_SECONDS-Date.now())/1000)):null,
+      (r.prepEndsAt?Math.max(0,Math.ceil((r.prepEndsAt-Date.now())/1000)):FIRST_PREP_SECONDS):null,
     totalDuration:GAME_SECONDS,totalRemaining:r.gameEndsAt?
       Math.max(0,Math.ceil((r.gameEndsAt-Date.now())/1000)):GAME_SECONDS,
     roundSummary:r.roundSummary,remaining:r.remaining,serverNow:Date.now(),hostOnline:!!r.hostId,
