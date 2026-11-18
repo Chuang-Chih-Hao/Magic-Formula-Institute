@@ -188,7 +188,7 @@
       "🔐 解題解鎖";
     return '<button class="unlock-card '+(unlocked?"unlocked":"locked")
       +(rare?" rare-recipe":"")+(found?" rare-found":"")
-      +'" data-action="'+action+'" data-id="'+r.id+'" '+(maxed||lockedRare?"disabled":"")+'">'
+      +'" data-action="'+action+'" data-id="'+r.id+'"'+(maxed||lockedRare?' disabled':'')+'>'
       +'<span>'+r.emoji+'</span><b>'+esc(r.name)+'</b><small>'+subtitle+'</small></button>';
   }
   function productCard(p,i){
