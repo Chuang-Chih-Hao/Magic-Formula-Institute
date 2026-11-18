@@ -59,6 +59,7 @@ async function main(){
     assert.equal(await student.locator(".menu-edit").count(),3);
     assert.equal(await student.locator(".decor-card").count(),5);
     console.log("PASS student can see three menu cards and five decoration options");
+    assert.equal(await student.locator(".unlock-card.unlocked").count(),0,"no pre-unlocked drinks");
 
     await student.locator("#shopName").fill("月光森林魔法屋");
     await student.locator('[data-action="theme"][data-id="mint"]').click();
