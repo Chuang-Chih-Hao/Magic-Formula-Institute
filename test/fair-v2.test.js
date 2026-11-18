@@ -129,16 +129,13 @@ test("rare challenges always require multiple steps, never reveal answers, and f
   assert.equal(buildProduct(perfect,{[rare.id]:3}).quality,123);
 });
 
-test("shopper score changes with paid advertising, fog and luck; client cannot spend without profit",()=>{
+test("advertising attracts extra visitors, tasting raises conversion, and neither adds shop score",()=>{
   const room=createRoom(),player=newPlayer("策略師");
-  player.shopName="星星商店";
-  player.unlocked=["berry","moon","forest"];
-  player.products=cannedMenu();
-  player.decor=["banner","samples"];player.ready=true;
+  player.shopName="星星商店";player.unlocked=["berry","moon","forest"];
+  player.products=cannedMenu();player.decor=["banner","samples"];player.ready=true;
   room.players=[player];
   const emits=[],io={to:()=>({emit:(event,value)=>emits.push({event,value})})};
-  const now=Date.now();
-  beginMarket(io,room,now);
+  const now=Date.now();beginMarket(io,room,now);
   const npc={flavor:"甜美"};
   const baseline=evaluateOffer(player,npc,65,0,now);
   assert.equal(baseline.eventBonus,0);
@@ -148,12 +145,19 @@ test("shopper score changes with paid advertising, fog and luck; client cannot s
   const result=useMarketAction(io,room,player,"advertise",now);
   assert.equal(result.remainingProfit,102);
   assert.equal(player.cost,18);
-  assert.equal(evaluateOffer(player,npc,65,0,now+1000).score,baseline.score+27);
-  assert.equal(evaluateOffer(player,npc,65,0,now+61000).score,baseline.score);
+  assert.equal(evaluateOffer(player,npc,65,0,now+1000).score,baseline.score,
+    "advertising must never give shop-score points");
+  assert.ok(room.promoSpawnAt<=now+1200,
+    "advertising must immediately schedule additional incoming customers");
+  const extra=pickCustomer(room,{leadShopId:player.id});
+  assert.equal(extra.advertisedFor,player.id);
+  assert.ok(extra.path.some(pt=>pt.x!==520),
+    "an advertising lead must actually walk toward a shop");
   assert.throws(()=>useMarketAction(io,room,player,"advertise",now+1000),/冷卻/);
   useMarketAction(io,room,player,"tasting",now+23000);
   assert.equal(player.cost,30);
-  assert.equal(evaluateOffer(player,npc,65,0,now+25000).score,baseline.score+27+15);
+  assert.equal(evaluateOffer(player,npc,65,0,now+25000).score,baseline.score,
+    "samples must not duplicate advertising or add shop-score points");
   useMarketAction(io,room,player,"shield",now+46000);
   assert.equal(player.cost,45);
   assert.ok(player.shieldUntil>now+46000);
@@ -163,21 +167,52 @@ test("shopper score changes with paid advertising, fog and luck; client cannot s
   assert.equal(player.shieldUntil,0);
   const fog=triggerMarketEvent(io,room,now+48000,"fog");
   assert.equal(fog.type,"fog");
-  assert.equal(evaluateOffer(player,npc,65,0,now+48001).score,baseline.score+27+15-23);
+  assert.equal(evaluateOffer(player,npc,65,0,now+48001).score,baseline.score-23);
   assert.ok(room.activeEvents.length>=2);
   const lucky=triggerMarketEvent(io,room,now+50000,"golden");
   assert.match(lucky.message,/幸運金券/);
+  assert.ok(Number(lucky.amount)>=8);
+  assert.equal(lucky.startedAt,now+50000,"event exposes animation start timestamp");
   assert.ok(player.profit>0);
   const rush=triggerMarketEvent(io,room,now+53000,"rush");
   assert.equal(rush.type,"rush");
   assert.ok(room.rushUntil>now+53000);
   const parade=triggerMarketEvent(io,room,now+55000,"parade");
   assert.equal(parade.type,"parade");
-  assert.ok(["甜美","清爽","夢幻"].includes(room.featuredFlavor));
+  assert.ok(["甜美","清爽","夢幻"].includes(parade.flavor));
   assert.ok(emits.some(x=>x.event==="fair:event"));
   room.paused=true;
   assert.throws(()=>useMarketAction(io,room,player,"tasting",now+80000),/目前不是可以營業的時間/);
 });
+
+test("tasting boosts real purchase probability by 22 percentage points",()=>{
+  const original=Math.random;
+  const room=createRoom(),p=newPlayer("試喝店長");
+  p.shopName="試喝魔法店";p.unlocked=["berry","moon","forest"];
+  p.products=cannedMenu();p.decor=["banner","samples"];room.players=[p];
+  const events=[],io={to:()=>({emit:(name,evt)=>events.push({name,evt})})};
+  const makeVisitor=()=>({id:"visitor"+Math.random(),name:"考驗顧客",emoji:"🐰",
+    flavor:"甜美",budget:50,stage:"wandering",shopId:p.id,
+    reasoning:{item:buildProduct(p.products[0]),score:35,
+      flavorMatch:true,bonusText:""},advertisedFor:null});
+  try{
+    Math.random=()=>0.70;
+    const first=makeVisitor();
+    settleNpc(io,room,first);
+    assert.equal(first.bought,false,"base probability 0.58 should refuse roll 0.70");
+    assert.equal(first.purchaseChance,0.58);
+    p.tastingUntil=Date.now()+60000;
+    const second=makeVisitor();
+    settleNpc(io,room,second);
+    assert.equal(second.bought,true,"samples raise probability to 0.80");
+    assert.equal(second.tastingBonus,0.22);
+    assert.equal(second.purchaseChance,0.8);
+    assert.equal(p.tastingConversions,1);
+    assert.equal(p.sales,1);
+    assert.ok(room.events[0].why.includes("試喝"));
+  }finally{Math.random=original;}
+});
+
 
 test("decorations provide meaningful advantages when stores offer comparable products",()=>{
   assert.equal(DECORATIONS.length,5);
