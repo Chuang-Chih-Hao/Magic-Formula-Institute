@@ -37,7 +37,9 @@ async function main(){
   let browser;
   try{
     await waitForServer();
-    browser=await chromium.launch({headless:true,args:["--no-sandbox"]});
+    browser=await chromium.launch({headless:true,
+      ...(process.env.CHROME_EXECUTABLE?{executablePath:process.env.CHROME_EXECUTABLE}:{}),
+      args:["--no-sandbox"]});
     const teacher=await browser.newPage({viewport:{width:1540,height:940}});
     const student=await browser.newPage({viewport:{width:1540,height:940}});
     const errors=[];
