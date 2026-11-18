@@ -361,7 +361,9 @@
       +'<div class="event-stage-main"><span class="event-spark">⚡ 園遊會突發大事件 ⚡</span>'
       +'<strong>'+esc(latest.name||"魔法事件")+'</strong>'
       +'<p>'+esc(latest.message)+'</p><small>'+esc(latest.why||"")+'</small></div>'
-      +'<div class="event-stage-impact"><b>'+(shop?esc(shop.shopName):"全場")+'</b>'
+      +'<div class="event-stage-impact"><b>'+(
+        ["rush","parade"].includes(latest.type)?"全場所有攤位":
+          shop?esc(shop.shopName):"全場")+'</b>'
       +'<strong>'+(latest.type==="fog"?"⚠️ -23 分":latest.type==="stardust"?"🌟 +22 分":
         latest.type==="golden"?"🪙 +"+latest.amount:latest.type==="rush"?"🐾 顧客變多":
         latest.type==="parade"?"🎈 "+esc(latest.flavor)+"口味":
