@@ -146,7 +146,7 @@ async function main(){
     await student.getByText("你的攤位已鎖定").waitFor({timeout:12000});
     const resolved=await student.locator(".waiting-product").nth(2).textContent();
     assert.match(resolved,/自由調配實驗飲/);
-    const found=resolved.match(/品質 (\\d+)/);
+    const found=resolved.match(/品質 (\d+)/);
     assert.ok(found,"locked free-mix shows an actual numeric quality");
     assert.ok(Number(found[1])>=20&&Number(found[1])<=110);
     console.log("PASS one server-resolved free-mix quality is revealed after locking:",found[1]);
