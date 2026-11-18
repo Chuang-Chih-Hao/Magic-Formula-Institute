@@ -191,7 +191,16 @@ test("teacher and 4 pupils must unlock 3 different drinks, lock, then start the 
   assert.equal((await rpc(teacher,"host:pause")).ok,true);
   assert.equal((await rpc(teacher,"host:resume")).ok,true);
   assert.equal((await rpc(teacher,"host:finish")).ok,true);
+  const resetState=new Promise((resolve,reject)=>{
+    const timer=setTimeout(()=>reject(Error("reset state not received")),3000);
+    const onState=v=>{
+      if(v.unlocked.length!==0||v.ready)return;
+      clearTimeout(timer);sockets[1].off("player:state",onState);resolve(v);
+    };
+    sockets[1].on("player:state",onState);
+  });
   assert.equal((await rpc(teacher,"host:reset")).ok,true);
-  assert.equal(states[0].unlocked.length,0,"new game resets unlocks");
-  assert.deepEqual(states[0].products,[null,null,null]);
+  const reset=await resetState;
+  assert.equal(reset.unlocked.length,0,"new game resets unlocks");
+  assert.deepEqual(reset.products,[null,null,null]);
 });
