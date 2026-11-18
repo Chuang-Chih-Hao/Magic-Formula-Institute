@@ -60,6 +60,9 @@ async function main(){
     assert.equal(await student.locator(".decor-card").count(),5);
     console.log("PASS student can see three menu cards and five decoration options");
     assert.equal(await student.locator(".unlock-card.unlocked").count(),0,"no pre-unlocked drinks");
+    assert.equal(await student.locator(".unlock-card.rare-recipe").count(),3,
+      "three legendary recipes exist but cannot be picked without drops");
+    assert.equal(await student.locator(".unlock-card.rare-recipe:disabled").count(),3);
     assert.match(await student.locator("#overallText").textContent(),/29:|30:00/);
     assert.match(await student.locator("#timeText").textContent(),/05:|06:00/);
     console.log("PASS first preparation timer and 30-minute global timer visible");
@@ -138,6 +141,10 @@ async function main(){
     await teacher.locator('[data-action="start"]').click();
     await teacher.locator("#fairCanvas").waitFor({timeout:12000});
     await student.locator("#fairCanvas").waitFor({timeout:12000});
+    assert.equal(await student.locator(".market-action").count(),3,
+      "a pupil can choose paid market actions instead of only waiting");
+    assert.ok(await teacher.locator("#eventStage").isVisible(),
+      "random market events are advertised to all pupils");
     await teacher.waitForFunction(()=>{
       const n=document.getElementById("npcCount");
       return n&&Number(n.textContent)>0;
@@ -162,6 +169,11 @@ async function main(){
     assert.ok(await teacher.locator("#npcComparison").isVisible());
     assert.ok(await teacher.locator("#leaderboard .rank-entry").count()>=1);
     console.log("PASS global customer decision and cross-stall comparison panel are visible");
+    await teacher.waitForFunction(()=>
+      !!document.querySelector("#eventStage .event-stage-item"),null,{timeout:55000});
+    assert.ok((await teacher.locator(".event-stage-item").first().textContent()).trim().length>=5);
+    console.log("PASS a timed random market event is visible to the teacher in real time");
+    await teacher.screenshot({path:folder+"/random-event.png",fullPage:true});
     await teacher.screenshot({path:folder+"/transactions.png",fullPage:true});
     assert.deepEqual(errors,[],"frontend should have no uncaught browser exceptions");
     console.log("BROWSER FAIR 2D SMOKE TEST PASSED.");
