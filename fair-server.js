@@ -695,6 +695,16 @@ function runServer(port=PORT){
       const delay=Date.now()-r.pausedAt;
       r.npcs.forEach(n=>{n.enterAt+=delay;n.decideAt+=delay;n.leaveAt+=delay;});
       r.spawnAt+=delay;
+      r.nextEventAt+=delay;
+      r.activeEvents.forEach(evt=>{evt.expiresAt+=delay;});
+      for(const p of r.players){
+        for(const field of ["promoUntil","tastingUntil","shieldUntil","fogUntil",
+          "festivalBuffUntil","marketActionUntil"]){
+          if(p[field]>r.pausedAt)p[field]+=delay;
+        }
+      }
+      if(r.rushUntil>r.pausedAt)r.rushUntil+=delay;
+      if(r.featuredFlavorUntil>r.pausedAt)r.featuredFlavorUntil+=delay;
       r.endsAt=Date.now()+r.remaining*1000;r.paused=false;
       sendState(io,r);
     });
