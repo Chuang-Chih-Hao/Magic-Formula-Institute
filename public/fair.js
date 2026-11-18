@@ -663,6 +663,10 @@
     setText("timeText",timeText());
     setText("overallText",overallText());
     setText("prepCountdown",timeText());
+    const bannerCounter=document.querySelector("#eventStage .event-time-left");
+    const event=room.activeEvents?.filter(e=>e.expiresAt>localTime()).slice(-1)[0];
+    if(bannerCounter&&event)bannerCounter.textContent=
+      String(Math.max(0,Math.ceil((event.expiresAt-localTime())/1000)));
     if(old!==room.phase&&role)render();
   });
   socket.on("player:state",data=>{
