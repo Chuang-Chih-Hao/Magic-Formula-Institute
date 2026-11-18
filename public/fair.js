@@ -838,6 +838,52 @@
     }
     return{x:finish.x,y:finish.y};
   }
+  function npcOpacityAt(x,y){
+    // Pass-through effect only at booth fronts, never on shared stone paths.
+    const near=shopPos.some(p=>Math.hypot(p.x-x,p.y-y)<108);
+    return near?0.58:1;
+  }
+  function drawEventEffects(c,now){
+    for(const event of room.activeEvents||[]){
+      if(event.expiresAt<=now)continue;
+      const shopIndex=room.players.findIndex(p=>p.id===event.shopId);
+      if(event.type==="rush"){
+        drawText(c,"🐾 🐰 🐱 🦊 🐻",520,609,"28px sans-serif");
+        continue;
+      }
+      if(event.type==="parade"){
+        drawText(c,"🎈 "+(room.featuredFlavor||"")+" 口味遊行 🎈",520,445,
+          "900 24px 'Noto Sans TC'","#ae6f9b");
+        continue;
+      }
+      if(shopIndex<0)continue;
+      const pos=shopPos[shopIndex],pulse=Math.sin(now/410)*5;
+      if(event.type==="fog"){
+        c.save();c.fillStyle="#d5dce9b6";
+        for(let i=0;i<5;i++)circle(c,pos.x-110+i*52,pos.y-15+Math.sin(now/570+i)*9,
+          30+pulse,"#d9dfecce");
+        c.restore();
+        drawText(c,"🌫️ -23",pos.x,pos.y+108,"900 20px sans-serif","#866d83");
+      }else if(event.type==="stardust"){
+        drawText(c,"🌠",pos.x+112,pos.y-125+pulse,"37px sans-serif");
+        drawText(c,"⭐ +22",pos.x,pos.y+113,"900 20px sans-serif","#b08256");
+      }else if(event.type==="shielded"){
+        circle(c,pos.x,pos.y-41,112,null,"#a8c8f3",4);
+        drawText(c,"🛡️",pos.x+115,pos.y-95,"32px sans-serif");
+      }else if(event.type==="golden"){
+        drawText(c,"🎟️ 🪙",pos.x+110,pos.y-98+pulse,"26px sans-serif");
+      }
+    }
+    for(let i=0;i<room.players.length;i++){
+      const booth=room.players[i],p=shopPos[i];
+      if((booth.boosts?.promoUntil||0)>now)
+        drawText(c,"📣",p.x-110,p.y-105+Math.sin(now/350)*5,"31px sans-serif");
+      if((booth.boosts?.tastingUntil||0)>now)
+        drawText(c,"🥤",p.x+108,p.y-104,"31px sans-serif");
+      if((booth.boosts?.shieldUntil||0)>now)
+        drawText(c,"🛡️",p.x+106,p.y+100,"25px sans-serif");
+    }
+  }
   function npcSprite(c,n,x,y,t){
     // The map avatar uses the exact same animal emoji as the comparison card.
     // This avoids showing generic mouse-like heads for foxes, deer and rabbits.
@@ -891,18 +937,44 @@
     c.clearRect(0,0,1040,680);
     background(c,now);
     for(let i=0;i<4;i++)shop(c,room.players[i]||null,i,now);
+    drawEventEffects(c,now);
     const npcs=room.npcs||[];
     const focus=npcs.find(x=>x.id===selectedNpcId);
     if(focus){
-      const paths=focus.path||[];
-      c.save();c.beginPath();c.strokeStyle="#ec8d9c";c.lineWidth=5;c.setLineDash([10,9]);
-      paths.forEach((pt,i)=>{if(i===0)c.moveTo(pt.x,pt.y);else c.lineTo(pt.x,pt.y);});c.stroke();c.restore();
+      // Tracking line starts at the animal's CURRENT location every frame,
+      // not at its original entry point. The target is the next path waypoint.
+      const pos=npcXY(focus,now);
+      const age=now-focus.enterAt;
+      const target=(focus.stage==="wandering"?
+        focus.path.find((pt,i)=>i>0&&pt.t>age+220):null)
+        ||(focus.stage==="wandering"?focus.path[focus.path.length-1]:{x:520,y:666});
+      c.save();
+      c.lineWidth=3;c.strokeStyle="#e87a95";c.setLineDash([7,9]);
+      c.lineDashOffset=-now/70;
+      c.beginPath();c.moveTo(pos.x,pos.y-4);c.lineTo(target.x,target.y);c.stroke();
+      c.setLineDash([]);
+      c.restore();
     }
     npcs.forEach((n,i)=>{
       const p=npcXY(n,now),dx=((n.id.charCodeAt(0)%7)-3)*3;
-      npcSprite(c,n,p.x+dx,p.y,now);
-      if(n.id===selectedNpcId){circle(c,p.x+dx,p.y-4,30,null,"#ff718d",4);}
-      if(i>=Math.max(0,npcs.length-4)||n.stage!=="wandering")drawNpcBubble(c,n,p.x+dx,p.y,now);
+      const x=p.x+dx,y=p.y;
+      c.save();
+      c.globalAlpha=npcOpacityAt(p.x,p.y);
+      npcSprite(c,n,x,y,now);
+      c.restore();
+      if(n.id===selectedNpcId){
+        c.save();
+        const pulse=Math.sin(now/230)*2;
+        circle(c,x,y-3,28+pulse,null,"#ff6c91",4);
+        for(let j=0;j<3;j++){
+          c.beginPath();c.strokeStyle="#f2a44a";c.lineWidth=2.5;
+          c.arc(x,y-9,36+j*8,Math.PI*1.06,Math.PI*1.45);
+          c.stroke();
+        }
+        c.restore();
+      }
+      if(i>=Math.max(0,npcs.length-4)||n.stage!=="wandering")
+        drawNpcBubble(c,n,x,y,now);
     });
     if(room.phase==="finished"){
       R(c,280,280,485,120,26,"#fffaf0e9","#cda880",5);
@@ -928,7 +1000,8 @@
     const y=(e.clientY-rect.top)*680/rect.height;
     const hitNpc=(room.npcs||[]).find(n=>{
       const p=npcXY(n,room.paused?(room.serverNow||localTime()):localTime());
-      return Math.hypot(p.x-x,p.y-y)<34;
+      const dx=((n.id.charCodeAt(0)%7)-3)*3;
+      return Math.hypot(p.x+dx-x,p.y-y)<34;
     });
     if(hitNpc){
       selectedNpcId=hitNpc.id;
