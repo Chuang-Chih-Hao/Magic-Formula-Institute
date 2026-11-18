@@ -3,10 +3,12 @@ const test=require("node:test");
 const assert=require("node:assert/strict");
 const {once}=require("node:events");
 const {io:client}=require("socket.io-client");
+const {makeSpecialQuestion}=require("../fair-questions");
 const {
   makeQuestion,qualityFor,costFor,buildProduct,rankOffers,decorateScore,
   newPlayer,createRoom,runServer,pickCustomer,settleNpc,beginMarket,completeRound,
-  forceStartAfterDeadline,finalizeGame,FIRST_PREP_SECONDS,GAME_SECONDS,RECIPES,DECORATIONS
+  forceStartAfterDeadline,finalizeGame,FIRST_PREP_SECONDS,GAME_SECONDS,RECIPES,DECORATIONS,
+  activeMarketBonus,evaluateOffer,triggerMarketEvent,useMarketAction,MARKET_ACTIONS
 }=require("../fair-server");
 
 function cannedMenu() {
@@ -34,9 +36,10 @@ test("14 varied math families keep answer choices distinct and avoid recent repe
   assert.ok(skills.size>=10);
 });
 
-test("all 12 recipes are locked initially; evolution improves actual product quality",()=>{
+test("12 ordinary and 3 legendary recipes are locked initially; evolution improves quality",()=>{
   const p=newPlayer("第一次來的學生");
-  assert.equal(RECIPES.length,12);
+  assert.equal(RECIPES.length,15);
+  assert.equal(RECIPES.filter(x=>x.rare).length,3);
   assert.equal(p.unlocked.length,0);
   assert.deepEqual(p.products,[null,null,null]);
   assert.equal(p.decor.length,0);
@@ -54,6 +57,77 @@ test("all 12 recipes are locked initially; evolution improves actual product qua
   assert.equal(buildProduct(mix,{berry:99}).quality,115);
   assert.equal(buildProduct(null,{}),null);
   assert.equal(buildProduct({...mix,price:100}),null);
+});
+
+test("rare challenges always require multiple steps, never reveal answers, and fit the four choices",()=>{
+  const types=new Set();
+  const history=[];
+  for(let i=0;i<160;i++){
+    const q=makeSpecialQuestion(history);
+    assert.match(q.prompt,/傳說級難題/);
+    assert.equal(q.choices.length,4);
+    assert.equal(new Set(q.choices).size,4);
+    assert.equal(q.choices[q.correctIndex],q.answer);
+    assert.ok(q.explanation.length>=30);
+    assert.ok(!history.some(p=>p.prompt===q.prompt));
+    history.push(q);
+    types.add(q.type);
+  }
+  assert.equal(types.size,4);
+  const rare=RECIPES.find(x=>x.rare);
+  const perfect={recipeId:rare.id,mix:[...rare.ratio],price:36};
+  assert.equal(buildProduct(perfect,{}).quality,108);
+  assert.equal(buildProduct(perfect,{[rare.id]:3}).quality,123);
+});
+
+test("shopper score changes with paid advertising, fog and luck; client cannot spend without profit",()=>{
+  const room=createRoom(),player=newPlayer("策略師");
+  player.shopName="星星商店";
+  player.unlocked=["berry","moon","forest"];
+  player.products=cannedMenu();
+  player.decor=["banner","samples"];
+  room.players=[player];
+  const emits=[],io={to:()=>({emit:(event,value)=>emits.push({event,value})})};
+  const now=Date.now();
+  beginMarket(io,room,now);
+  const npc={flavor:"甜美"};
+  const baseline=evaluateOffer(player,npc,65,0,now);
+  assert.equal(baseline.eventBonus,0);
+  assert.throws(()=>useMarketAction(io,room,player,"advertise",now),/淨利不足/);
+  assert.equal(player.cost,0,"failed action must never charge anyone");
+  player.revenue=120;player.cost=0;player.profit=120;
+  const result=useMarketAction(io,room,player,"advertise",now);
+  assert.equal(result.remainingProfit,102);
+  assert.equal(player.cost,18);
+  assert.equal(evaluateOffer(player,npc,65,0,now+1000).score,baseline.score+27);
+  assert.equal(evaluateOffer(player,npc,65,0,now+61000).score,baseline.score);
+  assert.throws(()=>useMarketAction(io,room,player,"advertise",now+1000),/冷卻/);
+  useMarketAction(io,room,player,"tasting",now+23000);
+  assert.equal(player.cost,30);
+  assert.equal(evaluateOffer(player,npc,65,0,now+25000).score,baseline.score+27+15);
+  useMarketAction(io,room,player,"shield",now+46000);
+  assert.equal(player.cost,45);
+  assert.ok(player.shieldUntil>now+46000);
+  const shielded=triggerMarketEvent(io,room,now+47000,"fog");
+  assert.equal(shielded.type,"shielded");
+  assert.equal(player.fogUntil,0);
+  assert.equal(player.shieldUntil,0);
+  const fog=triggerMarketEvent(io,room,now+48000,"fog");
+  assert.equal(fog.type,"fog");
+  assert.equal(evaluateOffer(player,npc,65,0,now+48001).score,baseline.score+27+15-23);
+  assert.ok(room.activeEvents.length>=2);
+  const lucky=triggerMarketEvent(io,room,now+50000,"golden");
+  assert.match(lucky.message,/幸運金券/);
+  assert.ok(player.profit>0);
+  const rush=triggerMarketEvent(io,room,now+53000,"rush");
+  assert.equal(rush.type,"rush");
+  assert.ok(room.rushUntil>now+53000);
+  const parade=triggerMarketEvent(io,room,now+55000,"parade");
+  assert.equal(parade.type,"parade");
+  assert.ok(["甜美","清爽","夢幻"].includes(room.featuredFlavor));
+  assert.ok(emits.some(x=>x.event==="fair:event"));
+  room.paused=true;
+  assert.throws(()=>useMarketAction(io,room,player,"tasting",now+80000),/目前不是可以營業的時間/);
 });
 
 test("decorations provide meaningful advantages when stores offer comparable products",()=>{
