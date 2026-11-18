@@ -85,7 +85,7 @@ test("shopper score changes with paid advertising, fog and luck; client cannot s
   player.shopName="星星商店";
   player.unlocked=["berry","moon","forest"];
   player.products=cannedMenu();
-  player.decor=["banner","samples"];
+  player.decor=["banner","samples"];player.ready=true;
   room.players=[player];
   const emits=[],io={to:()=>({emit:(event,value)=>emits.push({event,value})})};
   const now=Date.now();
