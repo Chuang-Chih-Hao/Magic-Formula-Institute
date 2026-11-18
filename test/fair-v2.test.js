@@ -295,6 +295,31 @@ test("teacher and 4 pupils must unlock 3 different drinks, lock, then start the 
         assert.equal(res.ok,true);assert.equal(res.correct,true);
       }
       assert.equal(states[i-1].unlocked.length,3);
+      if(i===1){
+        const found=states[i-1].specialOffer;
+        assert.ok(RECIPES.some(r=>r.id===found&&r.rare),
+          "solving a normal question can randomly reveal a legendary scroll");
+        assert.equal((await rpc(socket,"quest:get",{target:found})).ok,false,
+          "locked legendary recipe must not be unlocked via an ordinary quest");
+        assert.equal((await rpc(socket,"quest:get",{target:"__special__"})).ok,true);
+        const special=states[i-1].question;
+        assert.equal(special.action,"special");
+        assert.equal(special.correctIndex,undefined,
+          "special question must never reveal the correct index");
+        assert.equal((await rpc(socket,"quest:get",{target:"__special__"})).ok,false,
+          "one legendary scroll may not be rerolled");
+        const matched=special.prompt.match(/得到(\\d+)克.+依 (\\d+)：(\\d+)：(\\d+).+分成 (\\d+) 包/);
+        assert.ok(matched,"forced type-zero legendary challenge is a two-step ratio division");
+        const [,total,a,b,c,groups]=matched.map(Number);
+        const answer=String(total*a/((a+b+c)*groups));
+        const chosen=special.choices.indexOf(answer);
+        assert.ok(chosen>=0,"the special challenge has a correct visible choice");
+        const won=await rpc(socket,"quest:answer",{index:chosen});
+        assert.equal(won.ok,true);
+        assert.equal(won.correct,true);
+        assert.ok(states[i-1].unlocked.includes(found));
+        assert.equal(states[i-1].specialOffer,null);
+      }
       assert.equal((await rpc(socket,"product:set",{slot:0,recipeId:"berry",mix:[2,1,1],price:24})).ok,true);
       assert.equal((await rpc(socket,"product:set",{slot:1,recipeId:"moon",mix:[1,2,3],price:30})).ok,true);
       assert.equal((await rpc(socket,"product:set",{slot:2,recipeId:"forest",mix:[1,1,3],price:28})).ok,true);
