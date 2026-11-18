@@ -61,10 +61,48 @@ async function main(){
     await student.locator("#shopName").fill("月光森林魔法屋");
     await student.locator('[data-action="theme"][data-id="mint"]').click();
     await student.locator('[data-action="toggle-decor"][data-id="fountain"]').click();
+    await student.locator('[data-action="toggle-decor"][data-id="flowers"]').click();
     assert.equal(await student.locator(".decor-card.chosen").count(),2);
     await student.locator('[data-action="save-design"]').click();
     await student.screenshot({path:folder+"/setup.png",fullPage:true});
     console.log("PASS changing architecture and decorations");
+
+    // There are NO unlocked drinks at the start. Solve 3 separate math questions.
+    assert.equal(await student.locator(".unlock-card.unlocked").count(),0);
+    for(const recipe of ["berry","moon","forest"]){
+      let passed=false;
+      for(let attempt=0;attempt<80;attempt++){
+        await student.locator('[data-action="get-quest"][data-id="'+recipe+'"]').click();
+        await student.locator(".question .choices .choice").first().waitFor();
+        const choices=student.locator(".question .choices .choice");
+        await choices.nth(Math.floor(Math.random()*4)).click();
+        await student.locator(".feedback").waitFor({timeout:10000});
+        const card=student.locator('.unlock-card[data-id="'+recipe+'"]');
+        if(await card.evaluate(el=>el.classList.contains("unlocked"))){
+          passed=true;break;
+        }
+      }
+      assert.equal(passed,true,"the student should unlock "+recipe+" by answering");
+    }
+    console.log("PASS student unlocked 3 recipes by solving actual math questions");
+
+    await student.locator("#recipe-0").selectOption("berry");
+    await student.locator("#recipe-1").selectOption("moon");
+    await student.locator("#recipe-2").selectOption("forest");
+
+    // Verify uniform stage scaling keeps positions and proportions.
+    const first=await student.evaluate(()=>{
+      const rect=document.querySelector(".menu-edit").getBoundingClientRect();
+      return{x:rect.x,y:rect.y,width:rect.width,height:rect.height,scale:parseFloat(getComputedStyle(document.documentElement).getPropertyValue("--fair-scale"))};
+    });
+    await student.setViewportSize({width:1280,height:800});
+    const second=await student.evaluate(()=>{
+      const rect=document.querySelector(".menu-edit").getBoundingClientRect();
+      return{x:rect.x,y:rect.y,width:rect.width,height:rect.height,scale:parseFloat(getComputedStyle(document.documentElement).getPropertyValue("--fair-scale"))};
+    });
+    assert.ok(Math.abs(first.width/first.scale-second.width/second.scale)<3,"proportional width must remain identical");
+    assert.ok(Math.abs(first.height/first.scale-second.height/second.scale)<3,"proportional height must remain identical");
+    await student.setViewportSize({width:1540,height:940});
 
     // Make a deliberate exact proportional recipe and a custom price.
     await student.locator("#mix-0-0").fill("4");
