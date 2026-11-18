@@ -192,24 +192,34 @@
       +'<span>'+r.emoji+'</span><b>'+esc(r.name)+'</b><small>'+subtitle+'</small></button>';
   }
   function productCard(p,i){
+    const wild=p.recipeId==="wild";
     const r=chooseById(p.recipeId);
     const level=me.evolution?.[p.recipeId]||0;
     const quality=r?calcQuality(p.mix,r.ratio)+level*5+(r.rare?8:0):0;
-    const opts='<option value="" '+(!p.recipeId?"selected":"")+'>請先解鎖並選擇一款飲料</option>'
+    const selected=!!r||wild;
+    const opts='<option value="" '+(!p.recipeId?"selected":"")+'>請先選擇飲料或自由調配</option>'
       +room.recipes.map(recipe=>'<option value="'+recipe.id+'" '+(!me.unlocked.includes(recipe.id)?"disabled":"")
         +' '+(p.recipeId===recipe.id?"selected":"")+'>'+recipe.emoji+' '+recipe.name
         +(me.evolution?.[recipe.id]?" 🌟Lv."+me.evolution[recipe.id]:"")
-        +(!me.unlocked.includes(recipe.id)?"（尚未解鎖）":"")+'</option>').join("");
-    return '<article class="menu-edit"><div class="menu-edit-header"><span class="drink-num">'+(i+1)+'</span>'
+        +(!me.unlocked.includes(recipe.id)?"（尚未解鎖）":"")+'</option>').join("")
+      +'<option value="wild" '+(wild?"selected":"")+'>🧪 自由調配實驗飲（高風險、低機率高品質）</option>';
+    const wildNote=wild?'<div class="wild-mix-warning">🎲 不需要固定食譜，自選花露、星糖、月光水。'
+      +'鎖定攤位時才抽品質：<b>70% 偏低（20～59）</b>、25% 普通（60～84）、'
+      +'<b>5% 優良（85～110）</b>。鎖定後無法重新抽。</div>':"";
+    const flavor=wild?wildFlavor(p.mix):"";
+    return '<article class="menu-edit '+(wild?"wild-edit":"")+'"><div class="menu-edit-header"><span class="drink-num">'+(i+1)+'</span>'
       +'<h3>第 '+["一","二","三"][i]+' 款招牌飲品</h3>'
-      +'<span class="quality-pill" id="quality-'+i+'">'+(r?"品質 "+quality:"尚未選擇")+'</span></div>'
+      +'<span class="quality-pill" id="quality-'+i+'">'+(wild?"🎲 品質鎖定後揭曉":r?"品質 "+quality:"尚未選擇")+'</span></div>'
       +'<select class="product-select" id="recipe-'+i+'" data-change="recipe" data-slot="'+i+'">'+opts+'</select>'
+      +wildNote
       +'<div class="ratio-legend"><span>🌸 花露</span><span>🍬 星糖</span><span>💧 月光水</span></div>'
-      +'<div class="ratio-inputs">'+p.mix.map((v,k)=>'<input type="number" min="1" max="12" step="1" value="'+v+'" id="mix-'+i+'-'+k+'" aria-label="第'+(i+1)+'款第'+(k+1)+'種材料" data-change="mix" data-slot="'+i+'" data-index="'+k+'" '+(!r?"disabled":"")+'>').join("")+'</div>'
-      +'<div class="product-foot"><label>售價 🪙 <input type="number" min="12" max="80" step="1" value="'+p.price+'" id="price-'+i+'" data-change="price" data-slot="'+i+'" '+(!r?"disabled":"")+'></label>'
-      +'<span class="ratio-text">目標比例 <b id="ratio-'+i+'">'+(r?.ratio.join("：")||"？")+'</b></span>'
-      +'<button class="btn outline small" data-action="save-product" data-slot="'+i+'" '+(!r?"disabled":"")+'>儲存這杯</button></div>'
-      +'<p class="cost-label" id="cost-'+i+'">'+(r?'🌟 進化 Lv.'+level+'，品質額外 +'+level*5+' 分 · ':'先解鎖飲料才能販售 · ')+'每杯成本約 '+fmtMoney((6+p.mix.reduce((a,b)=>a+b,0)*2)/3)+' 金幣</p>'
+      +'<div class="ratio-inputs">'+p.mix.map((v,k)=>'<input type="number" min="1" max="12" step="1" value="'+v+'" id="mix-'+i+'-'+k+'" aria-label="第'+(i+1)+'款第'+(k+1)+'種材料" data-change="mix" data-slot="'+i+'" data-index="'+k+'" '+(!selected?"disabled":"")+'>').join("")+'</div>'
+      +'<div class="product-foot"><label>售價 🪙 <input type="number" min="12" max="80" step="1" value="'+p.price+'" id="price-'+i+'" data-change="price" data-slot="'+i+'" '+(!selected?"disabled":"")+'></label>'
+      +'<span class="ratio-text">'+(wild?'預測口味':'目標比例')+' <b id="ratio-'+i+'">'+(wild?flavor:r?.ratio.join("：")||"？")+'</b></span>'
+      +'<button class="btn outline small" data-action="save-product" data-slot="'+i+'" '+(!selected?"disabled":"")+'>儲存這杯</button></div>'
+      +'<p class="cost-label" id="cost-'+i+'">'+(wild?'🧪 自由調配不保證品質，結算前不可重抽 · ':
+        r?'🌟 進化 Lv.'+level+'，品質額外 +'+level*5+' 分 · ':'請先解鎖配方或選自由調配 · ')
+        +'每杯成本約 '+fmtMoney((6+p.mix.reduce((a,b)=>a+b,0)*2)/3)+' 金幣</p>'
       +'</article>';
   }
   function feedback(){
@@ -251,7 +261,7 @@
       +'<p class="hint">已選 <b id="decCount">'+draft.decor.length+'</b>/2 件；裝飾不是單純換色，會出現在地圖上的攤位旁。</p>'
       +'<div class="decor-grid">'+room.decorations.map(decorCard).join("")+'</div>'
       +'<button class="btn green full" data-action="save-design">🌿 儲存我的攤位設計</button></section>'
-      +'<section class="surface prep-drinks"><div class="step-head"><b>02</b><div><h2>三款招牌飲品</h2><p>先從題目解鎖至少三種，再決定哪些在本輪販售。可透過額外題目進化品質，一般最高 115 分，傳說飲料最高 123 分！</p></div></div>'
+      +'<section class="surface prep-drinks"><div class="step-head"><b>02</b><div><h2>三款招牌飲品</h2><p>選三款不同飲料；可選一款「🧪 自由調配」冒險，另兩款需答題解鎖。自由調配品質在鎖定時抽出，只有 5% 機率優良！</p></div></div>'
       +'<div class="products">'+draft.products.map(productCard).join("")+'</div></section>'
       +'<section class="surface prep-questions"><div class="step-head"><b>03</b><div><h2>數學配方研究桌</h2><p>🔐 第一次答對可解鎖；🌟 再答對使該配方進化，每級品質 +5，最高 Lv.3。</p></div></div>'
       +'<p class="hint">目前解鎖 '+me.unlocked.length+' / '+room.recipes.length+' 種，至少需要 3 種才能鎖定。本輪尚餘 <b id="prepCountdown">'+clock(room.remaining)+'</b>；全場 30 分鐘會自動結束。</p>'
@@ -424,6 +434,15 @@
   }
   function updateProductPreview(slot){
     const p=draft.products[slot],r=chooseById(p.recipeId);
+    if(p.recipeId==="wild"){
+      const max=Math.max(...p.mix);
+      const flavor=["甜美","夢幻","清爽"][p.mix.indexOf(max)];
+      setText("quality-"+slot,"🎲 品質鎖定後揭曉");
+      setText("ratio-"+slot,flavor);
+      setText("cost-"+slot,"🧪 品質隨機，70% 偏低、25% 普通、5% 優良 · 每杯成本約 "+
+        fmtMoney((6+p.mix.reduce((a,b)=>a+(Number(b)||0),0)*2)/3)+" 金幣");
+      return;
+    }
     if(!r)return;
     const level=me.evolution?.[p.recipeId]||0;
     setText("quality-"+slot,"品質 "+(calcQuality(p.mix,r.ratio)+level*5+(r.rare?8:0))+" 分 🌟Lv."+level);
@@ -476,9 +495,11 @@
     }
     if(action==="save-product"){
       const i=Number(b.dataset.slot),p=draft.products[i];
-      if(!p.recipeId)return toast("請先答題解鎖並選擇一款飲品",true);
+      if(!p.recipeId)return toast("請先選擇飲品配方，或選「🧪 自由調配」",true);
       if(!Number.isInteger(p.price)||p.price<12||p.price>80)return toast("單杯售價須為 12～80 整數",true);
-      return send("product:set",{slot:i,...p},r=>toast("第 "+(i+1)+" 款飲品已存好，品質 "+r.quality+" 分！"));
+      return send("product:set",{slot:i,...p},r=>toast(p.recipeId==="wild"?
+        "🧪 自由調配的材料與售價已存好！品質要鎖定攤位時才揭曉。":
+        "第 "+(i+1)+" 款飲品已存好，品質 "+r.quality+" 分！"));
     }
     if(action==="special-quest"){
       return send("quest:get",{target:"__special__"},()=>toast("🌠 傳說難題已出現！成功才會獲得特殊食譜。"));
@@ -495,11 +516,13 @@
       if(!$("shopName"))return;
       draft.shopName=$("shopName").value.trim();
       if(!draft.shopName)return toast("請先為你的攤位取名",true);
-      if(me.unlocked.length<3)return toast("先答對至少三道題，解鎖三款飲料！",true);
+      const wildCount=draft.products.filter(p=>p.recipeId==="wild").length;
+      if(wildCount>1)return toast("自由調配每輪最多只能選一款，另外兩款請解題解鎖",true);
       if(draft.decor.length!==2)return toast("請選擇兩件攤位裝飾",true);
-      if(draft.products.some(p=>!p.recipeId||!me.unlocked.includes(p.recipeId))
+      if(draft.products.some(p=>!p.recipeId||
+          (p.recipeId!=="wild"&&!me.unlocked.includes(p.recipeId)))
         ||new Set(draft.products.map(p=>p.recipeId)).size!==3)
-        return toast("請從已解鎖的飲料中選出三款不同的配方",true);
+        return toast("請選三款不同飲品；自由調配最多一杯，其他需答題解鎖",true);
       if(draft.products.some(p=>!p.mix.every(n=>Number.isInteger(n)&&n>=1&&n<=12)
         ||p.mix.reduce((a,b)=>a+b,0)>27||!Number.isInteger(p.price)||p.price<12||p.price>80))
         return toast("請檢查三款飲料的匙數及售價",true);
@@ -547,9 +570,11 @@
     const i=Number(el.dataset.slot),p=draft.products[i];
     if(!p)return;
     if(el.dataset.change==="recipe"){
+      const wild=el.value==="wild";
       const r=chooseById(el.value);
-      if(!r||!me.unlocked.includes(r.id))return;
-      p.recipeId=r.id;p.mix=r.ratio.slice();
+      if(!wild&&(!r||!me.unlocked.includes(r.id)))return;
+      p.recipeId=wild?"wild":r.id;
+      p.mix=wild?[2,2,2]:r.ratio.slice();
       for(let k=0;k<3;k++){const input=$("mix-"+i+"-"+k);if(input){input.value=p.mix[k];input.disabled=false;}}
       if($("price-"+i))$("price-"+i).disabled=false;
       redrawWithoutJump(studentSetup);
