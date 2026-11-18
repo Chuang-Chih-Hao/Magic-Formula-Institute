@@ -174,6 +174,7 @@ function roomPublic(r){
     roundSummary:r.roundSummary,remaining:r.remaining,serverNow:Date.now(),hostOnline:!!r.hostId,
     players:r.players.map(playerPublic),
     npcAiMode:npcAiMode(),npcs:r.npcs.map(n=>({...n})),activeEvents:r.activeEvents||[],
+    featuredFlavor:r.featuredFlavorUntil>Date.now()?r.featuredFlavor:null,
     events:r.events.slice(0,18),recipes:RECIPES,decorations:DECORATIONS};
 }
 function selfPublic(p){
@@ -332,7 +333,7 @@ function useMarketAction(io,room,p,type,now=Date.now()){
 function triggerMarketEvent(io,room,now=Date.now(),forcedKind){
   if(room.phase!=="market"||room.paused||!room.players.length)return null;
   const p=choose(room.players);
-  const types=["stardust","fog","golden","rush","parade"];
+  const types=["stardust","fog","golden","rush","parade","scroll"];
   const type=forcedKind||choose(types);
   const evt={kind:"market-event",type,round:room.round,shopId:p.id,
     expiresAt:now+30000,emoji:"🎪"};
@@ -358,6 +359,19 @@ function triggerMarketEvent(io,room,now=Date.now(),forcedKind){
     Object.assign(evt,{emoji:"🎟️",name:"金色幸運券",expiresAt:now+14000,
       message:"🎟️「"+p.shopName+"」撿到幸運金券！",
       why:"幸運獎金 +"+amount+" 金幣，已計入收入與累積淨利（不是飲料銷量）"});
+  }else if(type==="scroll"){
+    const candidates=RECIPES.filter(x=>x.rare&&!p.unlocked.includes(x.id));
+    if(candidates.length){
+      if(!p.specialOffer)p.specialOffer=choose(candidates).id;
+      const recipe=recipeById(p.specialOffer);
+      Object.assign(evt,{emoji:"📜",name:"天降傳說卷軸",message:"📜 神秘卷軸從天空飄到「"+p.shopName+"」！",
+        why:"獲得「"+recipe.name+"」特殊挑戰線索！下一輪準備期答對傳說級難題即可解鎖"});
+    }else{
+      p.festivalBuffUntil=Math.max(p.festivalBuffUntil||0,now+30000);
+      Object.assign(evt,{type:"stardust",emoji:"🌠",name:"滿星配方獎勵",
+        message:"🌠「"+p.shopName+"」已集齊全部傳說食譜，獲得星光祝福！",
+        why:"30 秒內所有 NPC 評分 +22"});
+    }
   }else if(type==="rush"){
     room.rushUntil=Math.max(room.rushUntil||0,now+30000);
     Object.assign(evt,{emoji:"🐾",name:"動物旅行團",message:"🐾 動物旅行團突然湧入園遊會！",
@@ -582,6 +596,8 @@ function runServer(port=PORT){
     });
     handle("quest:get",({target})=>{
       const {r,p}=setup();
+      // The special challenge cannot be rerolled by changing to another recipe.
+      if(p.question?.action==="special")throw Error("請先完成這張傳說級挑戰題，不能重新抽題");
       if(target==="__special__"){
         const rare=recipeById(p.specialOffer);
         if(!rare||!rare.rare||p.unlocked.includes(rare.id))
