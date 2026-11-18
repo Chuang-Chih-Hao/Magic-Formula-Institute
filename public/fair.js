@@ -295,8 +295,10 @@
     return events.slice(0,9).map(e=>'<div class="event '+esc(e.kind)+'">'
       +'<span class="event-emoji">'+(e.emoji||"🎪")+'</span>'
       +'<div><strong>'+esc(e.message)+'</strong>'+(e.why?'<small>💭 '+esc(e.why)+'</small>':"")
-      +'<small class="ai-dialogue">💬 '+(npcLines[e.npcId]?"Gemini 顧客":"顧客心聲")
-      +'：'+esc(npcLines[e.npcId]||e.dialogue||"下次再來！")+'</small></div></div>').join("");
+      +(["sale","leave"].includes(e.kind)?'<small class="ai-dialogue">💬 '+
+        (npcLines[e.npcId]?"Gemini 顧客":"顧客心聲")
+        +'：'+esc(npcLines[e.npcId]||e.dialogue||"下次再來！")+'</small>':"")
+      +'</div></div>').join("");
   }
   function compareNpc() {
     const all=room?.npcs||[];
@@ -872,6 +874,8 @@
         drawText(c,"🛡️",pos.x+115,pos.y-95,"32px sans-serif");
       }else if(event.type==="golden"){
         drawText(c,"🎟️ 🪙",pos.x+110,pos.y-98+pulse,"26px sans-serif");
+      }else if(event.type==="scroll"){
+        drawText(c,"📜 ✨",pos.x+110,pos.y-100+pulse,"30px sans-serif");
       }
     }
     for(let i=0;i<room.players.length;i++){
