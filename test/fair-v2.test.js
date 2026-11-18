@@ -6,7 +6,7 @@ const {io:client}=require("socket.io-client");
 const {
   makeQuestion,qualityFor,costFor,buildProduct,rankOffers,decorateScore,
   newPlayer,createRoom,runServer,pickCustomer,settleNpc,beginMarket,completeRound,
-  forceStartAfterDeadline,RECIPES,DECORATIONS
+  forceStartAfterDeadline,finalizeGame,FIRST_PREP_SECONDS,GAME_SECONDS,RECIPES,DECORATIONS
 }=require("../fair-server");
 
 function cannedMenu() {
@@ -97,35 +97,77 @@ test("one shared NPC compares across all booths and only one shop sells",()=>{
   }finally{Math.random=original;}
 });
 
-test("first preparation is unlimited; every later 10-minute round reopens menu and auto-locks",()=>{
+test("first preparation is six minutes, followed by ten-minute cycles and a hard thirty-minute deadline",()=>{
   const r=createRoom();
   assert.equal(r.round,1);
-  assert.equal(r.prepEndsAt,0);
+  assert.equal(r.prepEndsAt,0,"timer starts only when the first student joins");
+  assert.equal(r.remaining,FIRST_PREP_SECONDS);
+  assert.equal(FIRST_PREP_SECONDS,360);
+  assert.equal(GAME_SECONDS,1800);
   assert.equal(r.duration,4*60);
   assert.equal(r.prepDuration,6*60);
-  const p=newPlayer("店長");p.unlocked=["berry","moon","forest"];p.products=cannedMenu();p.decor=["banner","flowers"];p.ready=true;
+  const p=newPlayer("店長");
   r.players.push(p);
   const io={to:()=>({emit:()=>{}})};
   const start=1_700_000_000_000;
-  assert.equal(forceStartAfterDeadline(io,r,start+1_000_000),false,"first round never forces a start");
-  beginMarket(io,r,start);
+  r.sessionStartedAt=start;
+  r.prepEndsAt=start+FIRST_PREP_SECONDS*1000;
+  r.gameEndsAt=start+GAME_SECONDS*1000;
+  assert.equal(forceStartAfterDeadline(io,r,r.prepEndsAt-1),false,"no early forced opening");
+  assert.equal(forceStartAfterDeadline(io,r,r.prepEndsAt),true,"round 1 must have a real deadline");
   assert.equal(r.phase,"market");
   assert.equal(r.round,1);
-  completeRound(io,r,start+r.duration*1000,false);
+  assert.equal(p.unlocked.length,3,"unfinished students receive emergency recipes only when time expires");
+  assert.equal(p.products.length,3);
+  assert.ok(p.products.every(Boolean));
+  assert.equal(p.correct,0,"emergency recipes do not count as answered questions");
+  assert.equal(p.ready,true);
+  assert.equal(r.events[0].kind,"start");
+
+  completeRound(io,r,start+(FIRST_PREP_SECONDS+r.duration)*1000,false);
   assert.equal(r.phase,"setup");
   assert.equal(r.round,2);
   assert.equal(r.remaining,6*60);
   assert.equal(p.ready,false);
-  assert.deepEqual(p.unlocked,["berry","moon","forest"]);
-  assert.deepEqual(p.products,cannedMenu(),"existing menu carried into preparation");
+  assert.deepEqual(p.products.map(x=>x.recipeId),["berry","moon","forest"]);
   assert.equal(forceStartAfterDeadline(io,r,r.prepEndsAt-1000),false);
   assert.equal(forceStartAfterDeadline(io,r,r.prepEndsAt+1),true);
   assert.equal(r.phase,"market");
   assert.equal(r.round,2);
   assert.equal(p.ready,true);
   assert.equal(r.remaining,4*60);
-  completeRound(io,r,start+2_000_000,true);
+
+  assert.equal(finalizeGame(io,r,r.gameEndsAt,"time"),true);
+  assert.equal(r.phase,"finished","absolute cutoff ends the session regardless of round");
+  assert.equal(r.remaining,0);
+  assert.equal(r.events[0].message.includes("30 分鐘"),true);
+  assert.equal(finalizeGame(io,r,r.gameEndsAt+1000,"time"),false,"closing is idempotent");
+});
+
+test("30-minute hard deadline also closes a paused market or unfinished preparation",()=>{
+  const r=createRoom(),io={to:()=>({emit:()=>{}})};
+  r.players.push(newPlayer("未解鎖的學生"));
+  r.sessionStartedAt=Date.now()-GAME_SECONDS*1000;
+  r.gameEndsAt=Date.now()-1000;
+  r.prepEndsAt=Date.now()-1000;
+  assert.equal(finalizeGame(io,r,r.gameEndsAt,"time"),true);
   assert.equal(r.phase,"finished");
+  assert.deepEqual(r.players[0].products,[null,null,null],
+    "an unfinished preparation is closed without falsely inventing student results");
+
+  const next=createRoom();
+  const student=newPlayer("已鎖定的學生");
+  student.unlocked=["berry","moon","forest"];
+  student.products=cannedMenu();
+  student.decor=["banner","samples"];
+  student.ready=true;
+  next.players.push(student);
+  beginMarket(io,next,Date.now()-120000);
+  next.paused=true;
+  assert.equal(finalizeGame(io,next,Date.now(),"time"),true,
+    "teacher pause cannot bypass global cutoff");
+  assert.equal(next.phase,"finished");
+  assert.equal(next.paused,false);
 });
 
 test("teacher and 4 pupils must unlock 3 different drinks, lock, then start the first market",async t=>{
