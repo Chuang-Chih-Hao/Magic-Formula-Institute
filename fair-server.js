@@ -191,7 +191,7 @@ function pickCustomer(r){
   return {
     id:uid(),name:profile.name,emoji:profile.emoji,kind:profile.kind,
     color:profile.color,flavor:profile.flavor,budget,
-    enterAt,decideAt:enterAt+decideAfter,leaveAt:enterAt+decideAfter+4700,
+    enterAt,decideAt:enterAt+decideAfter,leaveAt:enterAt+decideAfter+15000,
     path,shopId:winner?.player.id||null,shopIndex:lastShop,
     chosenProduct:winner?.offer?.item?.recipeId||null,
     stage:"wandering",speech:choose([
