@@ -156,7 +156,7 @@ function selfPublic(p){
   return {id:p.id,name:p.name,ready:p.ready,unlocked:p.unlocked,evolution:p.evolution,theme:p.theme,
     shopName:p.shopName,products:p.products.map(menu=>productPublic(menu,p.evolution)),decor:p.decor,
     research:p.research,correct:p.correct,attempts:p.attempts,
-    question:p.question ? {id:p.question.id,prompt:p.question.prompt,choices:p.question.choices,skill:p.question.skill,target:p.question.target}:null,
+    question:p.question ? {id:p.question.id,prompt:p.question.prompt,choices:p.question.choices,skill:p.question.skill,target:p.question.target,action:p.question.action}:null,
     result:p.result};
 }
 function addEvent(r,event){
@@ -281,15 +281,19 @@ function beginMarket(io,r,now){
   if(r.phase!=="setup"||!r.players.length)return;
   if(r.round===1&&!r.players.every(p=>p.ready))return;
   r.phase="market";r.paused=false;r.remaining=r.duration;r.endsAt=now+r.duration*1000;
-  r.spawnAt=now+1200;r.lastAIAt=0;r.npcs=[];r.roundSummary=null;
+  r.spawnAt=now+1200;r.lastAIAt=0;r.npcs=[];
+  r.roundStartTotals=r.players.map(p=>({id:p.id,profit:p.profit,sales:p.sales}));
   addEvent(r,{kind:"start",round:r.round,message:"🎉 第 "+r.round+" 輪開市！四分鐘的動物園遊會開始了！"});
   sendState(io,r);
 }
 function completeRound(io,r,now,final=false){
   if(r.phase!=="market")return;
   for(const n of r.npcs)if(n.stage==="wandering")settleNpc(io,r,n);
-  const summary={round:r.round,top:[...r.players].sort((a,b)=>b.profit-a.profit)
-    .map(p=>({shopName:p.shopName,profit:cents(p.profit),sales:p.sales}))};
+  const summary={round:r.round,top:r.players.map(p=>{
+    const start=r.roundStartTotals?.find(x=>x.id===p.id)||{profit:0,sales:0};
+    return {shopName:p.shopName,roundProfit:cents(p.profit-start.profit),
+      roundSales:p.sales-start.sales,profit:cents(p.profit),sales:p.sales};
+  }).sort((a,b)=>b.roundProfit-a.roundProfit||b.profit-a.profit)};
   r.npcs=[];r.paused=false;r.roundSummary=summary;
   if(final){
     r.phase="finished";r.remaining=0;
