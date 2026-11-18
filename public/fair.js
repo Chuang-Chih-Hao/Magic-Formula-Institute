@@ -315,7 +315,7 @@
   function marketPage(){
     renderMode="market";
     if(selection>=room.players.length)selection=0;
-    root.innerHTML='<main class="shell">'+topbar()
+    root.innerHTML='<main class="shell market-shell">'+topbar()
       +(room.phase==="finished"?'<div class="winner-banner"><span>🏆</span><div><h1>魔法園遊會閉幕！</h1><p>本日營業王：<strong>'+esc(rank()[0]?.shopName||"尚無攤位")+'</strong>。排名依「收入 − 每杯材料成本」的淨利計算。</p></div></div>':
         '<div class="heading-row market-heading"><div><div class="eyebrow">LIVE MARKET · ANIMAL SHOPPING</div>'
         +'<h1>🎪 '+roundText()+' · 動物小鎮園遊會</h1><p>販售 '+Math.round(room.duration/60)+' 分鐘，結束後自動進入下輪商品調整，約每 10 分鐘重複一次！</p></div>'
