@@ -21,13 +21,25 @@
   const setText=(id,x)=>{if($(id))$(id).textContent=x;};
   const fmtMoney=x=>Number(x||0).toLocaleString("zh-TW",{maximumFractionDigits:2});
   const clock=x=>String(Math.floor((x||0)/60)).padStart(2,"0")+":"+String((x||0)%60).padStart(2,"0");
+  function scaleStage(){
+    // Fixed 1600x1000 composition: identical coordinates and relative sizes on any screen.
+    const scale=Math.min(window.innerWidth/1600,window.innerHeight/1000);
+    document.documentElement.style.setProperty("--fair-scale",String(scale));
+    document.documentElement.style.setProperty("--fair-offset-x",Math.max(0,(window.innerWidth-1600*scale)/2)+"px");
+    document.documentElement.style.setProperty("--fair-offset-y",Math.max(0,(window.innerHeight-1000*scale)/2)+"px");
+  }
+  window.addEventListener("resize",scaleStage,{passive:true});
+  window.addEventListener("orientationchange",scaleStage);
+  scaleStage();
   const themeStyle=t=>THEMES[t]||THEMES.strawberry;
   const currentPlayer=()=>room&&me?room.players.find(x=>x.id===me.id):null;
   const readyAll=()=>room&&room.players.length>0&&room.players.every(x=>x.ready);
   const isTeacher=()=>role==="host";
   const themeIcon=t=>themeStyle(t).emoji;
   const emoji=(str)=>str||"🍹";
-  const phase=()=>!room?"":room.phase==="setup"?"準備攤位":room.phase==="market"?"園遊會營業中":"結算時間";
+  const phase=()=>!room?"":room.phase==="setup"?"準備攤位":room.phase==="market"?"園遊會營業中":"總結算";
+  const roundText=()=>room?"第 "+room.round+" 輪":"";
+  const timeText=()=>room?.phase==="setup"&&room.round===1?"不限時":clock(room?.remaining);
   const localTime=()=>Date.now()+serverOffset;
   const chooseById=(id)=>room?.recipes?.find(r=>r.id===id);
   const decorateById=(id)=>room?.decorations?.find(d=>d.id===id);
@@ -53,7 +65,11 @@
     if(!me||!room)return;
     if(!draft||force||lastPlayerId!==me.id){
       draft={shopName:me.shopName,theme:me.theme,decor:[...me.decor],
-        products:me.products.map(p=>({recipeId:p.recipeId,mix:[...p.mix],price:p.price}))};
+        products:Array.from({length:3},(_,i)=>{
+          const p=me.products?.[i];
+          return p?{recipeId:p.recipeId,mix:[...p.mix],price:p.price}:
+            {recipeId:"",mix:[1,1,1],price:25};
+        })};
       lastPlayerId=me.id;
     }
   }
@@ -85,8 +101,8 @@
   function topbar(){
     return '<div class="topbar">'+logo()+'<div class="top-actions">'
       +'<span class="chip">🏠 房間 <b class="copy" data-action="copy">'+esc(room.code)+'</b></span>'
-      +'<span class="chip" id="phaseLabel">'+(room.paused?"⏸ 暫停中":"✦ "+phase())+'</span>'
-      +'<span class="chip clock">⏳ <b id="timeText">'+clock(room.remaining)+'</b></span>'
+      +'<span class="chip" id="phaseLabel">'+(room.paused?"⏸ 暫停中":"✦ "+roundText()+" · "+phase())+'</span>'
+      +'<span class="chip clock">⏳ <b id="timeText">'+timeText()+'</b></span>'
       +'<button class="btn tiny outline" data-action="leave">離開</button>'
       +'</div></div>';
   }
@@ -99,8 +115,10 @@
   function hostActions(){
     if(room.phase==="setup")return '<div class="teacher-controls">'
       +'<span>營業時長</span><select id="fairDuration" '+(room.phase!=="setup"?"disabled":"")+'>'+
-      [10,15,20,25,30].map(n=>'<option value="'+n+'" '+(n===room.duration/60?"selected":"")+'>'+n+' 分鐘</option>').join("")+'</select>'
-      +'<button class="btn primary" data-action="start" '+(!readyAll()?"disabled":"")+'>🎉 全員就緒，宣布開市</button></div>';
+      [3,4,5].map(n=>'<option value="'+n+'" '+(n===room.duration/60?"selected":"")+'>'+n+' 分鐘</option>').join("")+'</select>'
+      +(room.round===1?'<button class="btn primary" data-action="start" '+(!readyAll()?"disabled":"")+'>🎉 第一輪全員就緒，宣布開市</button>':
+       '<span class="hint">第 '+room.round+' 輪：全員鎖定就自動開市，逾時系統也會自動開市</span>'
+       +'<button class="btn primary" data-action="start" '+(!readyAll()?"disabled":"")+'>▶ 立刻開市</button>')+'</div>';
     if(room.phase==="market")return '<div class="teacher-controls">'
       +'<button class="btn outline" data-action="'+(room.paused?"resume":"pause")+'">'+(room.paused?"▶ 繼續園遊會":"⏸ 暫停園遊會")+'</button>'
       +'<button class="btn dark" data-action="finish">🏆 提前結算</button></div>';
@@ -110,11 +128,15 @@
     renderMode="hostsetup";
     root.innerHTML='<main class="shell">'+topbar()
       +'<div class="heading-row"><div><div class="eyebrow">TEACHER · PREPARATION</div><h1>🎪 魔法園遊會準備中</h1>'
-      +'<p>學生需先完成裝潢、備妥三款飲料並鎖定；全部準備好就能開市。</p></div>'
+      +'<p>'+(room.round===1?"第一輪準備不限時，學生需先答題解鎖三款飲料並鎖定。":
+        "第 "+room.round+" 輪調整期："+Math.round(room.prepDuration/60)+" 分鐘後強制開市；全員提前鎖定會立即開始。")
+        +'</p></div>'
       +'<div class="room-ticket"><small>投影或分享代碼</small><strong>'+esc(room.code)+'</strong><button class="btn tiny outline" data-action="copy">複製代碼</button></div></div>'
       +'<div class="teacher-grid"><div class="surface"><h2>🐻 四間攤位的準備狀態</h2>'
       +'<div id="readyList" class="ready-list">'+room.players.map(boothSummary).join("")+'</div>'
-      +'<p class="hint">目前 '+room.players.filter(x=>x.ready).length+' / '+room.players.length+' 位已鎖定。即使只有兩位學生也可以開市，不必等滿四位。</p>'
+      +'<p class="hint">第 '+room.round+' 輪 · 已鎖定 '+room.players.filter(x=>x.ready).length+' / '+room.players.length+
+      ' 位。'+(room.round===1?"第一輪沒有時間壓力。":"逾時未鎖定者沿用上一輪已儲存的菜單。")
+      +'</p>'+(room.round>1?'<div class="round-result">🏆 上一輪結束，學生可以換三款商品、改價格、再解題進化。</div>':"")
       +hostActions()
       +'</div><div class="surface"><h2>🗺️ 園遊會地圖預覽</h2><p class="sub">每個學生的建築與裝飾會出現在固定攤位。</p>'
       +'<div class="map-viewport preview-map"><canvas id="fairCanvas" width="1040" height="680"></canvas></div></div></div>'
@@ -127,33 +149,46 @@
       +'<small>'+(selected?"✅ 這件已設置在攤位":"點一下裝進攤位")+'</small></button>';
   }
   function recipeCard(r){
-    const unlocked=me.unlocked.includes(r.id);
-    return '<button class="unlock-card '+(unlocked?"unlocked":"locked")+'" data-action="'+(unlocked?"noop":"get-quest")+'" data-id="'+r.id+'">'
-      +'<span>'+r.emoji+'</span><b>'+r.name+'</b><small>'+(unlocked?"✅ 已解鎖":"🔐 答題解鎖")+'</small></button>';
+    const unlocked=me.unlocked.includes(r.id),level=me.evolution?.[r.id]||0;
+    const maxed=unlocked&&level>=3;
+    return '<button class="unlock-card '+(unlocked?"unlocked":"locked")+'" data-action="'+(maxed?"noop":"get-quest")+'" data-id="'+r.id+'" '+(maxed?"disabled":"")+'">'
+      +'<span>'+r.emoji+'</span><b>'+r.name+'</b><small>'+(unlocked
+        ?(maxed?"🏅 最高等級 Lv.3":"🌟 Lv."+level+" 再答一題進化")
+        :"🔐 解題解鎖")+'</small></button>';
   }
   function productCard(p,i){
-    const opts=room.recipes.map(r=>'<option value="'+r.id+'" '+(!me.unlocked.includes(r.id)?"disabled":"")+' '+(p.recipeId===r.id?"selected":"")+'>'+r.emoji+' '+r.name+(!me.unlocked.includes(r.id)?"（尚未解鎖）":"")+'</option>').join("");
-    const r=chooseById(p.recipeId),quality=calcQuality(p.mix,r?.ratio||[1,1,1]);
+    const r=chooseById(p.recipeId);
+    const level=me.evolution?.[p.recipeId]||0;
+    const quality=r?calcQuality(p.mix,r.ratio)+level*5:0;
+    const opts='<option value="" '+(!p.recipeId?"selected":"")+'>請先解鎖並選擇一款飲料</option>'
+      +room.recipes.map(recipe=>'<option value="'+recipe.id+'" '+(!me.unlocked.includes(recipe.id)?"disabled":"")
+        +' '+(p.recipeId===recipe.id?"selected":"")+'>'+recipe.emoji+' '+recipe.name
+        +(me.evolution?.[recipe.id]?" 🌟Lv."+me.evolution[recipe.id]:"")
+        +(!me.unlocked.includes(recipe.id)?"（尚未解鎖）":"")+'</option>').join("");
     return '<article class="menu-edit"><div class="menu-edit-header"><span class="drink-num">'+(i+1)+'</span>'
-      +'<h3>第 '+["一","二","三"][i]+' 款招牌飲品</h3><span class="quality-pill" id="quality-'+i+'">品質 '+quality+' 分</span></div>'
+      +'<h3>第 '+["一","二","三"][i]+' 款招牌飲品</h3>'
+      +'<span class="quality-pill" id="quality-'+i+'">'+(r?"品質 "+quality:"尚未選擇")+'</span></div>'
       +'<select class="product-select" id="recipe-'+i+'" data-change="recipe" data-slot="'+i+'">'+opts+'</select>'
       +'<div class="ratio-legend"><span>🌸 花露</span><span>🍬 星糖</span><span>💧 月光水</span></div>'
-      +'<div class="ratio-inputs">'+p.mix.map((v,k)=>'<input type="number" min="1" max="12" step="1" value="'+v+'" id="mix-'+i+'-'+k+'" aria-label="第'+(i+1)+'款第'+(k+1)+'種材料" data-change="mix" data-slot="'+i+'" data-index="'+k+'">').join("")+'</div>'
-      +'<div class="product-foot"><label>售價 🪙 <input type="number" min="12" max="80" step="1" value="'+p.price+'" id="price-'+i+'" data-change="price" data-slot="'+i+'"></label>'
+      +'<div class="ratio-inputs">'+p.mix.map((v,k)=>'<input type="number" min="1" max="12" step="1" value="'+v+'" id="mix-'+i+'-'+k+'" aria-label="第'+(i+1)+'款第'+(k+1)+'種材料" data-change="mix" data-slot="'+i+'" data-index="'+k+'" '+(!r?"disabled":"")+'>').join("")+'</div>'
+      +'<div class="product-foot"><label>售價 🪙 <input type="number" min="12" max="80" step="1" value="'+p.price+'" id="price-'+i+'" data-change="price" data-slot="'+i+'" '+(!r?"disabled":"")+'></label>'
       +'<span class="ratio-text">目標比例 <b id="ratio-'+i+'">'+(r?.ratio.join("：")||"？")+'</b></span>'
-      +'<button class="btn outline small" data-action="save-product" data-slot="'+i+'">儲存這杯</button></div>'
-      +'<p class="cost-label" id="cost-'+i+'">每杯成本約 '+fmtMoney((6+p.mix.reduce((a,b)=>a+b,0)*2)/3)+' 金幣</p>'
+      +'<button class="btn outline small" data-action="save-product" data-slot="'+i+'" '+(!r?"disabled":"")+'>儲存這杯</button></div>'
+      +'<p class="cost-label" id="cost-'+i+'">'+(r?'🌟 進化 Lv.'+level+'，品質額外 +'+level*5+' 分 · ':'先解鎖飲料才能販售 · ')+'每杯成本約 '+fmtMoney((6+p.mix.reduce((a,b)=>a+b,0)*2)/3)+' 金幣</p>'
       +'</article>';
   }
   function feedback(){
     if(!me.result)return "";
     return '<div class="feedback '+(me.result.correct?"right":"wrong")+'"><b>'
-      +(me.result.correct?"🌟 解對了，研究星星 +2！":"📖 這次再複習一下：")+'</b><p>正確答案：'+esc(me.result.answer)+'</p><p>'+esc(me.result.explanation)+'</p></div>';
+      +(me.result.correct?
+        (me.result.evolved?"✨ 配方進化成功！Lv."+me.result.level+"，品質 +"+(me.result.level*5)+" 分":
+          me.result.unlocked?"🔓 新飲品解鎖！現在可以加進三杯菜單。":"🌟 解對了，研究星星 +2！")
+        :"📖 這次再複習一下：")+'</b><p>正確答案：'+esc(me.result.answer)+'</p><p>'+esc(me.result.explanation)+'</p></div>';
   }
   function questZone(){
     if(!me.question)return feedback();
     const q=me.question;
-    return '<div class="question"><div class="skill">✦ '+esc(q.skill)+'</div><h3>'+esc(q.prompt)+'</h3>'
+    return '<div class="question"><div class="skill">✦ '+esc(q.skill)+' · '+(q.action==="evolve"?"進化研究":q.action==="unlock"?"解鎖研究":"自由練習")+'</div><h3>'+esc(q.prompt)+'</h3>'
       +'<div class="choices">'+q.choices.map((v,i)=>'<button class="btn choice" data-action="answer" data-index="'+i+'">'+esc(v)+'</button>').join("")+'</div></div>';
   }
   function studentSetup(){
@@ -162,7 +197,10 @@
     renderMode="studentsetup";
     root.innerHTML='<main class="shell">'+topbar()
       +'<div class="heading-row"><div><div class="eyebrow">MAGIC FAIR · DESIGN YOUR BOOTH</div>'
-      +'<h1>🌼 開市前的魔法準備</h1><p>先佈置攤位，再配好三杯招牌飲品。確認之後鎖定，正式開市就不能改！</p></div>'
+      +'<h1>🌼 '+roundText()+' · 魔法準備</h1><p>'+
+      (room.round===1?"第一輪準備不計時，必須先答對至少三道題，解鎖三款飲品。":
+        "本輪可更換商品、價格、配方和裝飾；若未鎖定，倒數結束時沿用上輪已儲存設定。")
+      +'</p></div>'
       +'<div class="research-score">📚 研究星星 <b>'+me.research+'</b><small>答對比與比例題獲得</small></div></div>'
       +'<div class="prep-grid">'
       +'<section class="surface prep-decor"><div class="step-head"><b>01</b><div><h2>打造與眾不同的攤位</h2><p>建築造型 + 兩個具有實際效果的大型裝飾</p></div></div>'
@@ -174,14 +212,15 @@
       +'<p class="hint">已選 <b id="decCount">'+draft.decor.length+'</b>/2 件；裝飾不是單純換色，會出現在地圖上的攤位旁。</p>'
       +'<div class="decor-grid">'+room.decorations.map(decorCard).join("")+'</div>'
       +'<button class="btn green full" data-action="save-design">🌿 儲存我的攤位設計</button></section>'
-      +'<section class="surface prep-drinks"><div class="step-head"><b>02</b><div><h2>三款招牌飲品</h2><p>比例越精準，品質越高；價格越貴越可能失去顧客</p></div></div>'
+      +'<section class="surface prep-drinks"><div class="step-head"><b>02</b><div><h2>三款招牌飲品</h2><p>先從題目解鎖至少三種，再決定哪些在本輪販售。可透過額外題目進化品質到 115 分！</p></div></div>'
       +'<div class="products">'+draft.products.map(productCard).join("")+'</div></section>'
-      +'<section class="surface prep-questions"><div class="step-head"><b>03</b><div><h2>數學配方研究桌</h2><p>想賣更特別的飲品，就先破解比例題！</p></div></div>'
+      +'<section class="surface prep-questions"><div class="step-head"><b>03</b><div><h2>數學配方研究桌</h2><p>🔐 第一次答對可解鎖；🌟 再答對使該配方進化，每級品質 +5，最高 Lv.3。</p></div></div>'
+      +'<p class="hint">目前解鎖 '+me.unlocked.length+' / '+room.recipes.length+' 種，至少需要 3 種才能鎖定。本輪尚餘 '+(room.round===1?"不限時":clock(room.remaining))+'。</p>'
       +'<div class="unlock-grid">'+room.recipes.map(recipeCard).join("")+'</div>'
       +'<button class="btn outline full" data-action="practice" style="margin:12px 0">🧠 另外挑戰一題比例應用</button>'
       +'<div id="quizArea">'+questZone()+'</div>'
       +'<div class="lock-section"><div class="lock-emoji">🔒</div><h3>準備好迎接園遊會了嗎？</h3>'
-      +'<p>鎖定後三款商品、售價、比例和裝飾都不能更改。可以等待老師宣布開市。</p>'
+      +'<p>鎖定後本輪三款商品、售價、比例與裝飾均不能更改。下一輪會重新開放，保留已解鎖及進化的配方。</p>'
       +'<button class="btn primary full" data-action="lock">🔐 三款飲品確認，鎖定攤位</button></div></section></div>'
       +'</main>';
   }
@@ -189,12 +228,12 @@
     renderMode="ready";
     root.innerHTML='<main class="shell">'+topbar()
       +'<div class="heading-row"><div><div class="eyebrow">BOOTH LOCKED</div><h1>🔒 你的攤位已鎖定</h1>'
-      +'<p>裝飾、三款飲料、售價、比例都已封存。等待老師宣布開市！</p></div>'
+      +'<p>第 '+room.round+' 輪菜單已封存！'+(room.round===1?"等待老師宣布開市。":"等其他玩家鎖定，就會自動進入下一輪販售；時間到也會開市。")+'</p></div>'
       +'<span class="pill-big">✅ 準備完成</span></div>'
       +'<div class="wait-layout"><div class="surface"><h2>🍹 我的三款招牌飲品</h2>'
-      +'<div class="waiting-products">'+me.products.map((p,i)=>'<div class="waiting-product"><span>'+p.emoji+'</span><b>'+esc(p.name)+'</b><small>品質 '+p.quality+' · 🪙 '+p.price+' · '+p.mix.join("：")+'</small></div>').join("")+'</div>'
+      +'<div class="waiting-products">'+me.products.filter(Boolean).map((p,i)=>'<div class="waiting-product"><span>'+p.emoji+'</span><b>'+esc(p.name)+'</b><small>品質 '+p.quality+' · 🪙 '+p.price+' · '+p.mix.join("：")+'</small></div>').join("")+'</div>'
       +'<h3>🎀 已選裝飾</h3><div class="benefit-list">'+me.decor.map(id=>{const d=decorateById(id);return d?'<div>'+d.emoji+' <b>'+d.name+'</b> · '+d.desc+'</div>':"";}).join("")+'</div>'
-      +'<p class="hint">教師開市前，無法撤回鎖定。如需重來，請老師使用「再開一場」。</p></div>'
+      +'<p class="hint">此輪已鎖定。下一輪準備期會重新開放設定，所有已解鎖配方與進化等級都會保留。</p></div>'
       +'<div class="surface"><h2>🗺️ 等待其他攤位就緒</h2>'
       +'<div class="map-viewport"><canvas id="fairCanvas" width="1040" height="680"></canvas></div>'
       +'<div class="ready-list">'+room.players.map(boothSummary).join("")+'</div></div></div></main>';
@@ -247,7 +286,7 @@
     root.innerHTML='<main class="shell">'+topbar()
       +(room.phase==="finished"?'<div class="winner-banner"><span>🏆</span><div><h1>魔法園遊會閉幕！</h1><p>本日營業王：<strong>'+esc(rank()[0]?.shopName||"尚無攤位")+'</strong>。排名依「收入 − 每杯材料成本」的淨利計算。</p></div></div>':
         '<div class="heading-row market-heading"><div><div class="eyebrow">LIVE MARKET · ANIMAL SHOPPING</div>'
-        +'<h1>🎪 動物小鎮魔法園遊會</h1><p>所有攤位已鎖定！NPC 會走路、比價、試算品質，最後自行決定去哪一間買。</p></div>'
+        +'<h1>🎪 '+roundText()+' · 動物小鎮園遊會</h1><p>販售 '+Math.round(room.duration/60)+' 分鐘，結束後自動進入下輪商品調整，約每 10 分鐘重複一次！</p></div>'
         +(isTeacher()?hostActions():'<span class="pill-big">🧙 一起看顧客挑哪家！</span>')+'</div>')
       +(room.paused?'<div class="pause-alert">⏸ 老師暫停園遊會，顧客和計時器也已暫停。</div>':"")
       +'<div class="market-layout">'
@@ -270,8 +309,8 @@
     if($("boothDetails"))$("boothDetails").innerHTML=selectedBoothCard();
     if($("npcComparison"))$("npcComparison").innerHTML=compareNpc();
     setText("npcCount",room.npcs.filter(n=>n.stage==="wandering").length);
-    setText("timeText",clock(room.remaining));
-    setText("phaseLabel",room.paused?"⏸ 暫停中":"✦ "+phase());
+    setText("timeText",timeText());
+    setText("phaseLabel",room.paused?"⏸ 暫停中":"✦ "+roundText()+" · "+phase());
   }
   function render(){
     if(!role||!room){drawLanding();return;}
@@ -293,9 +332,10 @@
   function updateProductPreview(slot){
     const p=draft.products[slot],r=chooseById(p.recipeId);
     if(!r)return;
-    setText("quality-"+slot,"品質 "+calcQuality(p.mix,r.ratio)+" 分");
+    const level=me.evolution?.[p.recipeId]||0;
+    setText("quality-"+slot,"品質 "+(calcQuality(p.mix,r.ratio)+level*5)+" 分 🌟Lv."+level);
     setText("ratio-"+slot,r.ratio.join("："));
-    setText("cost-"+slot,"每杯成本約 "+fmtMoney((6+p.mix.reduce((a,b)=>a+(Number(b)||0),0)*2)/3)+" 金幣");
+    setText("cost-"+slot,"🌟 進化品質額外 +"+level*5+" 分 · 每杯成本約 "+fmtMoney((6+p.mix.reduce((a,b)=>a+(Number(b)||0),0)*2)/3)+" 金幣");
   }
 
   document.addEventListener("click",e=>{
@@ -328,24 +368,29 @@
     if(action==="toggle-decor"){
       draft.shopName=$("shopName")?.value||draft.shopName;
       const id=b.dataset.id;
-      if(draft.decor.includes(id))return toast("至少要保留兩件裝飾；點另一件即可替換。");
-      draft.decor=[draft.decor[1],id];
+      if(draft.decor.includes(id))draft.decor=draft.decor.filter(x=>x!==id);
+      else if(draft.decor.length<2)draft.decor.push(id);
+      else draft.decor=[draft.decor[1],id];
       studentSetup();return;
     }
     if(action==="save-design"){
       draft.shopName=$("shopName")?.value.trim()||"";
       if(!draft.shopName)return toast("請先輸入店名",true);
+      if(draft.decor.length!==2)return toast("請先選滿兩件裝飾",true);
       return send("shop:update",{shopName:draft.shopName,theme:draft.theme},()=>{
         send("decor:set",{decor:draft.decor},()=>toast("🎀 攤位造型和裝飾已儲存！"));
       });
     }
     if(action==="save-product"){
       const i=Number(b.dataset.slot),p=draft.products[i];
+      if(!p.recipeId)return toast("請先答題解鎖並選擇一款飲品",true);
       if(!Number.isInteger(p.price)||p.price<12||p.price>80)return toast("單杯售價須為 12～80 整數",true);
       return send("product:set",{slot:i,...p},r=>toast("第 "+(i+1)+" 款飲品已存好，品質 "+r.quality+" 分！"));
     }
     if(action==="get-quest"){
-      return send("quest:get",{target:b.dataset.id},()=>{toast("破解這題，就能解鎖新配方！");});
+      const unlocked=me.unlocked.includes(b.dataset.id);
+      return send("quest:get",{target:b.dataset.id},()=>toast(unlocked?
+        "✨ 再答一題，讓這杯飲品進化提升品質！":"🔐 答對即可解鎖新飲品！"));
     }
     if(action==="practice")return send("quest:get",{target:"practice"});
     if(action==="answer")return send("quest:answer",{index:Number(b.dataset.index)},r=>toast(r.correct?"答對了！已獲得研究星星。":"看看解析，再挑戰新題吧。",!r.correct));
@@ -353,7 +398,11 @@
       if(!$("shopName"))return;
       draft.shopName=$("shopName").value.trim();
       if(!draft.shopName)return toast("請先為你的攤位取名",true);
-      if(new Set(draft.products.map(p=>p.recipeId)).size!==3)return toast("三款飲品必須是不同的配方",true);
+      if(me.unlocked.length<3)return toast("先答對至少三道題，解鎖三款飲料！",true);
+      if(draft.decor.length!==2)return toast("請選擇兩件攤位裝飾",true);
+      if(draft.products.some(p=>!p.recipeId||!me.unlocked.includes(p.recipeId))
+        ||new Set(draft.products.map(p=>p.recipeId)).size!==3)
+        return toast("請從已解鎖的飲料中選出三款不同的配方",true);
       if(draft.products.some(p=>!p.mix.every(n=>Number.isInteger(n)&&n>=1&&n<=12)
         ||p.mix.reduce((a,b)=>a+b,0)>27||!Number.isInteger(p.price)||p.price<12||p.price>80))
         return toast("請檢查三款飲料的匙數及售價",true);
@@ -400,9 +449,12 @@
     if(!p)return;
     if(el.dataset.change==="recipe"){
       const r=chooseById(el.value);
-      if(!r)return;
+      if(!r||!me.unlocked.includes(r.id))return;
       p.recipeId=r.id;p.mix=r.ratio.slice();
-      for(let k=0;k<3;k++){const input=$("mix-"+i+"-"+k);if(input)input.value=p.mix[k];}
+      for(let k=0;k<3;k++){const input=$("mix-"+i+"-"+k);if(input){input.value=p.mix[k];input.disabled=false;}}
+      if($("price-"+i))$("price-"+i).disabled=false;
+      studentSetup();
+      return;
     }else if(el.dataset.change==="mix")p.mix[Number(el.dataset.index)]=Number(el.value);
     else if(el.dataset.change==="price")p.price=Number(el.value);
     updateProductPreview(i);
@@ -434,7 +486,8 @@
     const old=room.phase;
     room.remaining=data.remaining;room.phase=data.phase;room.paused=data.paused;
     if(data.serverNow)serverOffset=data.serverNow-Date.now();
-    setText("timeText",clock(room.remaining));
+    if(data.round)room.round=data.round;
+    setText("timeText",timeText());
     if(old!==room.phase&&role)render();
   });
   socket.on("player:state",data=>{
