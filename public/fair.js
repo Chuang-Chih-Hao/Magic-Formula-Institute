@@ -427,6 +427,10 @@
     lastRoomPhase=room.phase;
   }
 
+  function wildFlavor(mix){
+    const index=mix.indexOf(Math.max(...mix));
+    return ["甜美","夢幻","清爽"][index<0?0:index];
+  }
   function calcQuality(mix,ratio){
     const a=mix.map(Number),total=a.reduce((x,y)=>x+y,0),r=ratio.reduce((x,y)=>x+y,0);
     if(!a.every(n=>Number.isInteger(n)&&n>=1&&n<=12)||total>27)return 0;
