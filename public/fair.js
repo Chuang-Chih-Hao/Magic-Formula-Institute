@@ -713,7 +713,10 @@
     if(!points.length)return{x:520,y:666};
     const finish=points[points.length-1];
     if(n.stage!=="wandering"&&now>=n.decideAt){
-      const k=Math.min(1,Math.max(0,(now-n.decideAt)/4700));
+      const elapsed=Math.max(0,now-n.decideAt);
+      const exitAfter=Math.max(5000,(n.leaveAt-n.decideAt)-5000);
+      if(elapsed<5000)return{x:finish.x,y:finish.y};
+      const k=Math.min(1,(elapsed-5000)/exitAfter);
       if(k<.46)return{x:finish.x+(520-finish.x)*(k/.46),y:finish.y+(343-finish.y)*(k/.46)};
       return{x:520,y:343+(666-343)*((k-.46)/.54)};
     }
