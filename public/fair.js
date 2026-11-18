@@ -251,7 +251,7 @@
       +'<p class="hint">已選 <b id="decCount">'+draft.decor.length+'</b>/2 件；裝飾不是單純換色，會出現在地圖上的攤位旁。</p>'
       +'<div class="decor-grid">'+room.decorations.map(decorCard).join("")+'</div>'
       +'<button class="btn green full" data-action="save-design">🌿 儲存我的攤位設計</button></section>'
-      +'<section class="surface prep-drinks"><div class="step-head"><b>02</b><div><h2>三款招牌飲品</h2><p>先從題目解鎖至少三種，再決定哪些在本輪販售。可透過額外題目進化品質到 115 分！</p></div></div>'
+      +'<section class="surface prep-drinks"><div class="step-head"><b>02</b><div><h2>三款招牌飲品</h2><p>先從題目解鎖至少三種，再決定哪些在本輪販售。可透過額外題目進化品質，一般最高 115 分，傳說飲料最高 123 分！</p></div></div>'
       +'<div class="products">'+draft.products.map(productCard).join("")+'</div></section>'
       +'<section class="surface prep-questions"><div class="step-head"><b>03</b><div><h2>數學配方研究桌</h2><p>🔐 第一次答對可解鎖；🌟 再答對使該配方進化，每級品質 +5，最高 Lv.3。</p></div></div>'
       +'<p class="hint">目前解鎖 '+me.unlocked.length+' / '+room.recipes.length+' 種，至少需要 3 種才能鎖定。本輪尚餘 <b id="prepCountdown">'+clock(room.remaining)+'</b>；全場 30 分鐘會自動結束。</p>'
