@@ -308,7 +308,7 @@ test("teacher and 4 pupils must unlock 3 different drinks, lock, then start the 
           "special question must never reveal the correct index");
         assert.equal((await rpc(socket,"quest:get",{target:"__special__"})).ok,false,
           "one legendary scroll may not be rerolled");
-        const matched=special.prompt.match(/得到(\\d+)克.+依 (\\d+)：(\\d+)：(\\d+).+分成 (\\d+) 包/);
+        const matched=special.prompt.match(/得到(\d+)克.+依 (\d+)：(\d+)：(\d+).+分成 (\d+) 包/);
         assert.ok(matched,"forced type-zero legendary challenge is a two-step ratio division");
         const [,total,a,b,c,groups]=matched.map(Number);
         const answer=String(total*a/((a+b+c)*groups));
