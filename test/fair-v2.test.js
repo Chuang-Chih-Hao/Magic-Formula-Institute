@@ -181,6 +181,16 @@ test("teacher and 4 pupils must unlock 3 different drinks, lock, then start the 
       assert.equal((await rpc(socket,"product:set",{slot:0,recipeId:"berry",mix:[2,1,1],price:24})).ok,true);
       assert.equal((await rpc(socket,"product:set",{slot:1,recipeId:"moon",mix:[1,2,3],price:30})).ok,true);
       assert.equal((await rpc(socket,"product:set",{slot:2,recipeId:"forest",mix:[1,1,3],price:28})).ok,true);
+      assert.equal((await rpc(socket,"menu:save",{products:[
+        {recipeId:"moon",mix:[1,2,3],price:30},
+        {recipeId:"berry",mix:[2,1,1],price:24},
+        {recipeId:"forest",mix:[1,1,3],price:28}
+      ]})).ok,true,"swapping first and second drinks must save atomically");
+      assert.equal((await rpc(socket,"menu:save",{products:[
+        {recipeId:"moon",mix:[1,2,3],price:30},
+        {recipeId:"moon",mix:[1,2,3],price:30},
+        {recipeId:"forest",mix:[1,1,3],price:28}
+      ]})).ok,false,"duplicate menu must be rejected");
       assert.equal((await rpc(socket,"player:lock")).ok,true);
       assert.equal((await rpc(socket,"product:set",{slot:0,recipeId:"berry",mix:[2,1,1],price:15})).ok,false);
     }
