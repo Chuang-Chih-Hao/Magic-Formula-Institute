@@ -130,10 +130,26 @@ async function main(){
     await student.locator("#mix-0-2").fill("2");
     await student.locator("#price-0").fill("29");
     assert.match((await student.locator("#quality-0").textContent()),/100/);
+    await student.locator("#recipe-2").selectOption("wild");
+    assert.match(await student.locator("#quality-2").textContent(),/鎖定後揭曉/);
+    assert.match(await student.locator(".wild-mix-warning").textContent(),/70%/);
+    await student.locator("#mix-2-0").fill("1");
+    await student.locator("#mix-2-1").fill("2");
+    await student.locator("#mix-2-2").fill("6");
+    await student.locator("#price-2").fill("33");
+    assert.match(await student.locator("#ratio-2").textContent(),/清爽/);
+    await student.screenshot({path:folder+"/free-mix.png",fullPage:true});
+    console.log("PASS free-mix drink selectable and adjustable; quality hidden until lock");
     // The lock button must save the user's current three products automatically.
     student.on("dialog",d=>d.accept());
     await student.locator('[data-action="lock"]').click();
     await student.getByText("你的攤位已鎖定").waitFor({timeout:12000});
+    const resolved=await student.locator(".waiting-product").nth(2).textContent();
+    assert.match(resolved,/自由調配實驗飲/);
+    const found=resolved.match(/品質 (\\d+)/);
+    assert.ok(found,"locked free-mix shows an actual numeric quality");
+    assert.ok(Number(found[1])>=20&&Number(found[1])<=110);
+    console.log("PASS one server-resolved free-mix quality is revealed after locking:",found[1]);
     await teacher.locator('[data-action="start"]').waitFor({state:"visible"});
     assert.equal(await teacher.locator('[data-action="start"]').isDisabled(),false);
     console.log("PASS student locked menu; teacher sees ready status");
