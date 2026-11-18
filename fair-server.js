@@ -16,6 +16,8 @@ const PORT=Number(process.env.PORT||3000);
 const MAX_PLAYERS=4;
 const MARKET_SECONDS=4*60;
 const CYCLE_SECONDS=10*60;
+const FIRST_PREP_SECONDS=6*60;
+const GAME_SECONDS=30*60;
 const MAX_EVOLUTION=3;
 const MAP={
   entry:{x:520,y:666}, hub:{x:520,y:343},
@@ -123,8 +125,8 @@ function createRoom(){
   let code;
   do {code=String(rand(100000,999999));}while(rooms.has(code));
   const room={code,hostSecret:uid()+uid(),hostId:null,phase:"setup",round:1,
-    duration:MARKET_SECONDS,remaining:0,prepDuration:CYCLE_SECONDS-MARKET_SECONDS,
-    prepEndsAt:0,roundSummary:null,endsAt:0,paused:false,
+    duration:MARKET_SECONDS,remaining:FIRST_PREP_SECONDS,prepDuration:CYCLE_SECONDS-MARKET_SECONDS,
+    prepEndsAt:0,sessionStartedAt:0,gameEndsAt:0,roundSummary:null,endsAt:0,paused:false,
     players:[],npcs:[],events:[],spawnAt:0,lastAIAt:0,entrySeq:0,
     createdAt:Date.now()};
   rooms.set(code,room);return room;
@@ -145,8 +147,10 @@ function playerPublic(p,i) {
 }
 function roomPublic(r){
   return {code:r.code,phase:r.phase,round:r.round,paused:r.paused,duration:r.duration,
-    prepDuration:r.prepDuration,prepRemaining:r.phase==="setup"&&r.round>1?
-      Math.max(0,Math.ceil((r.prepEndsAt-Date.now())/1000)):null,
+    prepDuration:r.prepDuration,prepRemaining:r.phase==="setup"?
+      Math.max(0,Math.ceil((r.prepEndsAt||Date.now()+FIRST_PREP_SECONDS-Date.now())/1000)):null,
+    totalDuration:GAME_SECONDS,totalRemaining:r.gameEndsAt?
+      Math.max(0,Math.ceil((r.gameEndsAt-Date.now())/1000)):GAME_SECONDS,
     roundSummary:r.roundSummary,remaining:r.remaining,serverNow:Date.now(),hostOnline:!!r.hostId,
     players:r.players.map(playerPublic),
     npcAiMode:npcAiMode(),npcs:r.npcs.map(n=>({...n})),
@@ -283,7 +287,7 @@ function beginMarket(io,r,now){
   r.phase="market";r.paused=false;r.remaining=r.duration;r.endsAt=now+r.duration*1000;
   r.spawnAt=now+1200;r.lastAIAt=0;r.npcs=[];
   r.roundStartTotals=r.players.map(p=>({id:p.id,profit:p.profit,sales:p.sales}));
-  addEvent(r,{kind:"start",round:r.round,message:"🎉 第 "+r.round+" 輪開市！四分鐘的動物園遊會開始了！"});
+  addEvent(r,{kind:"start",round:r.round,message:"🎉 第 "+r.round+" 輪開市！顧客入場，開始限時販售！"});
   sendState(io,r);
 }
 function completeRound(io,r,now,final=false){
@@ -307,23 +311,65 @@ function completeRound(io,r,now,final=false){
   }
   sendState(io,r);
 }
+function completeMissingMenuAtDeadline(p){
+  // Only at the first timed deadline: prevent an idle student from blocking the class.
+  // No recipe is preselected or unlocked when entering the room.
+  const ids=new Set(p.unlocked);
+  for(const recipe of RECIPES){
+    if(ids.size>=3)break;
+    if(!ids.has(recipe.id)){
+      p.unlocked.push(recipe.id);
+      ids.add(recipe.id);
+    }
+  }
+  const valid=[];
+  for(const menu of p.products){
+    if(menu&&ids.has(menu.recipeId)&&buildProduct(menu,p.evolution)&&!valid.some(x=>x.recipeId===menu.recipeId))
+      valid.push({recipeId:menu.recipeId,mix:[...menu.mix],price:menu.price});
+  }
+  for(const id of p.unlocked){
+    if(valid.length===3)break;
+    if(!valid.some(x=>x.recipeId===id)){
+      const recipe=recipeById(id);
+      valid.push({recipeId:id,mix:[...recipe.ratio],price:28});
+    }
+  }
+  p.products=valid.slice(0,3);
+  if(p.decor.length!==2||new Set(p.decor).size!==2)p.decor=["banner","samples"];
+}
 function forceStartAfterDeadline(io,r,now=Date.now()){
-  // Never auto-start round 1: pupils must explicitly unlock and lock 3 recipes.
-  if(r.phase!=="setup"||r.round<=1||now<r.prepEndsAt||!r.players.length)return false;
+  if(r.phase!=="setup"||!r.sessionStartedAt||now<r.prepEndsAt||!r.players.length)return false;
   for(const p of r.players){
     if(!p.ready){
-      // The last locked menu from the previous round is always retained.
-      // In-progress edits only count if they were saved to the server.
-      const valid=p.products.length===3&&p.products.every(x=>x&&p.unlocked.includes(x.recipeId)&&buildProduct(x,p.evolution));
-      if(!valid)throw Error("Previous locked menu is invalid; refusing to force-start");
+      if(r.round===1)completeMissingMenuAtDeadline(p);
+      if(p.products.length!==3||!p.products.every(x=>x&&p.unlocked.includes(x.recipeId)&&buildProduct(x,p.evolution)))
+        throw Error("Unable to complete a valid menu before forced start");
       p.ready=true;
     }
   }
-  addEvent(r,{kind:"autolock",round:r.round,
-    message:"⏰ 本輪調整時間到！未鎖定攤位已沿用最後儲存的三款飲料。"});
+  addEvent(r,{kind:"autolock",round:r.round,message:r.round===1?
+    "⏰ 第一輪六分鐘準備結束：尚未完成者由系統暫時補足三款基本配方，不計入解題成績。":
+    "⏰ 本輪調整時間到！未鎖定攤位沿用最後儲存的三款飲料。"});
   beginMarket(io,r,now);
   return true;
 }
+function finalizeGame(io,r,now=Date.now(),reason="time"){
+  if(r.phase==="finished")return false;
+  if(r.phase==="market"){
+    completeRound(io,r,now,true);
+  }else{
+    r.phase="finished";r.remaining=0;r.paused=false;r.npcs=[];
+    sendState(io,r);
+  }
+  if(reason==="time"){
+    r.remaining=0;
+    r.gameEndsAt=Math.min(r.gameEndsAt||now,now);
+    addEvent(r,{kind:"finish",round:r.round,message:"🏆 全場滿 30 分鐘，園遊會強制閉幕並公布累積淨利！"});
+    sendState(io,r);
+  }
+  return true;
+}
+
 function runServer(port=PORT){
   const app=express();
   app.disable("x-powered-by");
@@ -384,6 +430,12 @@ function runServer(port=PORT){
         if(r.players.length>=MAX_PLAYERS)throw Error("教室最多四位學生");
         if(!clean(name,12))throw Error("請先輸入暱稱");
         p=newPlayer(name);r.players.push(p);
+        if(!r.sessionStartedAt){
+          r.sessionStartedAt=Date.now();
+          r.gameEndsAt=r.sessionStartedAt+GAME_SECONDS*1000;
+          r.prepEndsAt=r.sessionStartedAt+FIRST_PREP_SECONDS*1000;
+          r.remaining=FIRST_PREP_SECONDS;
+        }
       }
       if(p.socketId&&p.socketId!==socket.id)io.to(p.socketId).emit("player:replaced");
       p.socketId=socket.id;enter(r,"student",p);
@@ -499,12 +551,16 @@ function runServer(port=PORT){
       sendState(io,r);
     });
     handle("host:finish",()=>{
-      const r=host();if(r.phase!=="market")throw Error("尚未開市");
-      completeRound(io,r,Date.now(),true);
+      const r=host();if(r.phase==="finished")throw Error("已結算");
+      finalizeGame(io,r,Date.now(),"teacher");
     });
     handle("host:reset",()=>{
       const r=host();
-      r.phase="setup";r.round=1;r.paused=false;r.remaining=0;r.prepEndsAt=0;
+      const resetAt=Date.now();
+      r.phase="setup";r.round=1;r.paused=false;r.remaining=FIRST_PREP_SECONDS;
+      r.sessionStartedAt=r.players.length?resetAt:0;
+      r.prepEndsAt=r.players.length?resetAt+FIRST_PREP_SECONDS*1000:0;
+      r.gameEndsAt=r.players.length?resetAt+GAME_SECONDS*1000:0;
       r.npcs=[];r.events=[];r.roundSummary=null;
       for(const p of r.players){
         Object.assign(p,{ready:false,sales:0,revenue:0,cost:0,profit:0,stars:0,
@@ -527,7 +583,12 @@ function runServer(port=PORT){
     const now=Date.now();
     for(const [id,r] of rooms){
       if(now-r.createdAt>6*3600000){rooms.delete(id);continue;}
-      if(r.phase==="setup"&&r.round>1){
+      // The 30-minute overall deadline is absolute, including teacher pauses and
+      // preparation periods; it cannot be extended by leaving a phase unready.
+      if(r.phase!=="finished"&&r.gameEndsAt&&now>=r.gameEndsAt){
+        finalizeGame(io,r,now,"time");
+      }
+      if(r.phase==="setup"&&r.sessionStartedAt){
         r.remaining=Math.max(0,Math.ceil((r.prepEndsAt-now)/1000));
         if(r.remaining===0)forceStartAfterDeadline(io,r,now);
       }
@@ -550,7 +611,9 @@ function runServer(port=PORT){
           if(changed)sendState(io,r);
         }
       }
-      io.to(id).emit("room:clock",{remaining:r.remaining,phase:r.phase,round:r.round,paused:r.paused,serverNow:now});
+      io.to(id).emit("room:clock",{remaining:r.remaining,phase:r.phase,round:r.round,paused:r.paused,
+        totalRemaining:r.gameEndsAt?Math.max(0,Math.ceil((r.gameEndsAt-now)/1000)):GAME_SECONDS,
+        serverNow:now});
     }
   },1000);
   interval.unref();
@@ -559,4 +622,5 @@ function runServer(port=PORT){
 }
 if(require.main===module)runServer();
 module.exports={runServer,createRoom,newPlayer,makeQuestion,qualityFor,costFor,buildProduct,evaluateOffer,
-  rankOffers,decorateScore,pickCustomer,settleNpc,beginMarket,completeRound,forceStartAfterDeadline,RECIPES,DECORATIONS,MAP};
+  rankOffers,decorateScore,pickCustomer,settleNpc,beginMarket,completeRound,forceStartAfterDeadline,
+  finalizeGame,completeMissingMenuAtDeadline,FIRST_PREP_SECONDS,GAME_SECONDS,RECIPES,DECORATIONS,MAP};
