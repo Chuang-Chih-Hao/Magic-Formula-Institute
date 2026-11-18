@@ -3,6 +3,7 @@ on:
   push:
     paths:
       - '.github/workflows/browser-fair.yml'
+      - 'test/browser-smoke.js'
   workflow_dispatch:
 jobs:
   chromium:
