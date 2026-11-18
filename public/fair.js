@@ -178,16 +178,23 @@
   }
   function recipeCard(r){
     const unlocked=me.unlocked.includes(r.id),level=me.evolution?.[r.id]||0;
+    const rare=!!r.rare,found=me.specialOffer===r.id;
     const maxed=unlocked&&level>=3;
-    return '<button class="unlock-card '+(unlocked?"unlocked":"locked")+'" data-action="'+(maxed?"noop":"get-quest")+'" data-id="'+r.id+'" '+(maxed?"disabled":"")+'">'
-      +'<span>'+r.emoji+'</span><b>'+r.name+'</b><small>'+(unlocked
-        ?(maxed?"🏅 最高等級 Lv.3":"🌟 Lv."+level+" 再答一題進化")
-        :"🔐 解題解鎖")+'</small></button>';
+    const lockedRare=rare&&!unlocked&&!found;
+    const action=maxed||lockedRare?"noop":found?"special-quest":"get-quest";
+    const subtitle=found?"🌠 已掉落！點擊挑戰高難度題":
+      rare&&!unlocked?"🌌 傳說：答題時隨機掉落線索":
+      unlocked?(maxed?"🏅 最高等級 Lv.3":"🌟 Lv."+level+" 再答一題進化"):
+      "🔐 解題解鎖";
+    return '<button class="unlock-card '+(unlocked?"unlocked":"locked")
+      +(rare?" rare-recipe":"")+(found?" rare-found":"")
+      +'" data-action="'+action+'" data-id="'+r.id+'" '+(maxed||lockedRare?"disabled":"")+'">'
+      +'<span>'+r.emoji+'</span><b>'+esc(r.name)+'</b><small>'+subtitle+'</small></button>';
   }
   function productCard(p,i){
     const r=chooseById(p.recipeId);
     const level=me.evolution?.[p.recipeId]||0;
-    const quality=r?calcQuality(p.mix,r.ratio)+level*5:0;
+    const quality=r?calcQuality(p.mix,r.ratio)+level*5+(r.rare?8:0):0;
     const opts='<option value="" '+(!p.recipeId?"selected":"")+'>請先解鎖並選擇一款飲料</option>'
       +room.recipes.map(recipe=>'<option value="'+recipe.id+'" '+(!me.unlocked.includes(recipe.id)?"disabled":"")
         +' '+(p.recipeId===recipe.id?"selected":"")+'>'+recipe.emoji+' '+recipe.name
@@ -209,14 +216,18 @@
     if(!me.result)return "";
     return '<div class="feedback '+(me.result.correct?"right":"wrong")+'"><b>'
       +(me.result.correct?
-        (me.result.evolved?"✨ 配方進化成功！Lv."+me.result.level+"，品質 +"+(me.result.level*5)+" 分":
-          me.result.unlocked?"🔓 新飲品解鎖！現在可以加進三杯菜單。":"🌟 解對了，研究星星 +2！")
-        :"📖 這次再複習一下：")+'</b><p>正確答案：'+esc(me.result.answer)+'</p><p>'+esc(me.result.explanation)+'</p></div>';
+        (me.result.specialWon?"🌠 傳說食譜挑戰成功！已永久解鎖特殊飲料！":
+        me.result.evolved?"✨ 配方進化成功！Lv."+me.result.level+"，品質 +"+(me.result.level*5)+" 分":
+          me.result.unlocked?"🔓 新飲品解鎖！現在可以加進三杯菜單。":
+          me.result.specialDropped?"🌠 解對了！神秘食譜線索掉落，快挑戰高難度題！":
+          "🌟 解對了，研究星星 +2！")
+        :me.result.specialLost?"💫 傳說級難題未通過，線索消失，下次還有機會！":
+          "📖 這次再複習一下：")+'</b><p>正確答案：'+esc(me.result.answer)+'</p><p>'+esc(me.result.explanation)+'</p></div>';
   }
   function questZone(){
     if(!me.question)return feedback();
     const q=me.question;
-    return '<div class="question"><div class="skill">✦ '+esc(q.skill)+' · '+(q.action==="evolve"?"進化研究":q.action==="unlock"?"解鎖研究":"自由練習")+'</div><h3>'+esc(q.prompt)+'</h3>'
+    return '<div class="question"><div class="skill">✦ '+esc(q.skill)+' · '+(q.action==="special"?"🌠 傳說級多步驟難題":q.action==="evolve"?"進化研究":q.action==="unlock"?"解鎖研究":"自由練習")+'</div><h3>'+esc(q.prompt)+'</h3>'
       +'<div class="choices">'+q.choices.map((v,i)=>'<button class="btn choice" data-action="answer" data-index="'+i+'">'+esc(v)+'</button>').join("")+'</div></div>';
   }
   function studentSetup(){
@@ -244,6 +255,9 @@
       +'<div class="products">'+draft.products.map(productCard).join("")+'</div></section>'
       +'<section class="surface prep-questions"><div class="step-head"><b>03</b><div><h2>數學配方研究桌</h2><p>🔐 第一次答對可解鎖；🌟 再答對使該配方進化，每級品質 +5，最高 Lv.3。</p></div></div>'
       +'<p class="hint">目前解鎖 '+me.unlocked.length+' / '+room.recipes.length+' 種，至少需要 3 種才能鎖定。本輪尚餘 <b id="prepCountdown">'+clock(room.remaining)+'</b>；全場 30 分鐘會自動結束。</p>'
+      +(me.specialOffer?'<div class="special-drop">🌠 **神秘卷軸掉落！** 完成傳說級難題可解鎖 <b>'+
+        esc(chooseById(me.specialOffer)?.name||"特殊配方")+'</b>；答錯則卷軸消失。'
+        +'<button class="btn primary small" data-action="special-quest">立即挑戰</button></div>':"")
       +'<div class="unlock-grid">'+room.recipes.map(recipeCard).join("")+'</div>'
       +'<button class="btn outline full" data-action="practice" style="margin:12px 0">🧠 另外挑戰一題比例應用</button>'
       +'<div id="quizArea">'+questZone()+'</div>'
@@ -369,7 +383,7 @@
     const p=draft.products[slot],r=chooseById(p.recipeId);
     if(!r)return;
     const level=me.evolution?.[p.recipeId]||0;
-    setText("quality-"+slot,"品質 "+(calcQuality(p.mix,r.ratio)+level*5)+" 分 🌟Lv."+level);
+    setText("quality-"+slot,"品質 "+(calcQuality(p.mix,r.ratio)+level*5+(r.rare?8:0))+" 分 🌟Lv."+level);
     setText("ratio-"+slot,r.ratio.join("："));
     setText("cost-"+slot,"🌟 進化品質額外 +"+level*5+" 分 · 每杯成本約 "+fmtMoney((6+p.mix.reduce((a,b)=>a+(Number(b)||0),0)*2)/3)+" 金幣");
   }
@@ -423,13 +437,17 @@
       if(!Number.isInteger(p.price)||p.price<12||p.price>80)return toast("單杯售價須為 12～80 整數",true);
       return send("product:set",{slot:i,...p},r=>toast("第 "+(i+1)+" 款飲品已存好，品質 "+r.quality+" 分！"));
     }
+    if(action==="special-quest"){
+      return send("quest:get",{target:"__special__"},()=>toast("🌠 傳說難題已出現！成功才會獲得特殊食譜。"));
+    }
     if(action==="get-quest"){
       const unlocked=me.unlocked.includes(b.dataset.id);
       return send("quest:get",{target:b.dataset.id},()=>toast(unlocked?
         "✨ 再答一題，讓這杯飲品進化提升品質！":"🔐 答對即可解鎖新飲品！"));
     }
     if(action==="practice")return send("quest:get",{target:"practice"});
-    if(action==="answer")return send("quest:answer",{index:Number(b.dataset.index)},r=>toast(r.correct?"答對了！已獲得研究星星。":"看看解析，再挑戰新題吧。",!r.correct));
+    if(action==="answer")return send("quest:answer",{index:Number(b.dataset.index)},r=>
+      toast(r.correct?"答對了！別忘了看看是否掉落特殊卷軸。":"看看解析，再挑戰新題吧。",!r.correct));
     if(action==="lock"){
       if(!$("shopName"))return;
       draft.shopName=$("shopName").value.trim();
