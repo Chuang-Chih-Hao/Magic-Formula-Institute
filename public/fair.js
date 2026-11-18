@@ -124,6 +124,14 @@
       +'<button class="btn dark" data-action="finish">🏆 提前結算</button></div>';
     return '<div class="teacher-controls"><button class="btn primary" data-action="reset">🔄 再開一場園遊會</button></div>';
   }
+  function roundSummaryBanner(){
+    const summary=room?.roundSummary;
+    if(!summary||room.phase!=="setup")return "";
+    return '<div class="round-score"><b>🏆 第 '+summary.round+' 輪結算</b><span>各攤本輪淨利：</span>'
+      +summary.top.map((p,i)=>'<span>'+["🥇","🥈","🥉","④"][i]+' '+esc(p.shopName)
+        +' <strong>+'+fmtMoney(p.roundProfit)+'</strong> 金幣（'+p.roundSales+'杯）</span>').join("")
+      +'<small>目前已進入下一輪，重新選擇飲品和策略！</small></div>';
+  }
   function hostSetup(){
     renderMode="hostsetup";
     root.innerHTML='<main class="shell">'+topbar()
@@ -132,7 +140,7 @@
         "第 "+room.round+" 輪調整期："+Math.round(room.prepDuration/60)+" 分鐘後強制開市；全員提前鎖定會立即開始。")
         +'</p></div>'
       +'<div class="room-ticket"><small>投影或分享代碼</small><strong>'+esc(room.code)+'</strong><button class="btn tiny outline" data-action="copy">複製代碼</button></div></div>'
-      +'<div class="teacher-grid"><div class="surface"><h2>🐻 四間攤位的準備狀態</h2>'
+      +roundSummaryBanner()+'<div class="teacher-grid"><div class="surface"><h2>🐻 四間攤位的準備狀態</h2>'
       +'<div id="readyList" class="ready-list">'+room.players.map(boothSummary).join("")+'</div>'
       +'<p class="hint">第 '+room.round+' 輪 · 已鎖定 '+room.players.filter(x=>x.ready).length+' / '+room.players.length+
       ' 位。'+(room.round===1?"第一輪沒有時間壓力。":"逾時未鎖定者沿用上一輪已儲存的菜單。")
@@ -202,7 +210,7 @@
         "本輪可更換商品、價格、配方和裝飾；若未鎖定，倒數結束時沿用上輪已儲存設定。")
       +'</p></div>'
       +'<div class="research-score">📚 研究星星 <b>'+me.research+'</b><small>答對比與比例題獲得</small></div></div>'
-      +'<div class="prep-grid">'
+      +roundSummaryBanner()+'<div class="prep-grid">'
       +'<section class="surface prep-decor"><div class="step-head"><b>01</b><div><h2>打造與眾不同的攤位</h2><p>建築造型 + 兩個具有實際效果的大型裝飾</p></div></div>'
       +'<label class="field-label">我的店名<input id="shopName" maxlength="18" value="'+esc(draft.shopName)+'"></label>'
       +'<h3>選一種建築（每種造型不同）</h3><div class="theme-grid">'+Object.entries(THEMES).map(([id,t])=>
@@ -215,7 +223,7 @@
       +'<section class="surface prep-drinks"><div class="step-head"><b>02</b><div><h2>三款招牌飲品</h2><p>先從題目解鎖至少三種，再決定哪些在本輪販售。可透過額外題目進化品質到 115 分！</p></div></div>'
       +'<div class="products">'+draft.products.map(productCard).join("")+'</div></section>'
       +'<section class="surface prep-questions"><div class="step-head"><b>03</b><div><h2>數學配方研究桌</h2><p>🔐 第一次答對可解鎖；🌟 再答對使該配方進化，每級品質 +5，最高 Lv.3。</p></div></div>'
-      +'<p class="hint">目前解鎖 '+me.unlocked.length+' / '+room.recipes.length+' 種，至少需要 3 種才能鎖定。本輪尚餘 '+(room.round===1?"不限時":clock(room.remaining))+'。</p>'
+      +'<p class="hint">目前解鎖 '+me.unlocked.length+' / '+room.recipes.length+' 種，至少需要 3 種才能鎖定。本輪尚餘 <b id="prepCountdown">'+(room.round===1?"不限時":clock(room.remaining))+'</b>。</p>'
       +'<div class="unlock-grid">'+room.recipes.map(recipeCard).join("")+'</div>'
       +'<button class="btn outline full" data-action="practice" style="margin:12px 0">🧠 另外挑戰一題比例應用</button>'
       +'<div id="quizArea">'+questZone()+'</div>'
@@ -230,7 +238,7 @@
       +'<div class="heading-row"><div><div class="eyebrow">BOOTH LOCKED</div><h1>🔒 你的攤位已鎖定</h1>'
       +'<p>第 '+room.round+' 輪菜單已封存！'+(room.round===1?"等待老師宣布開市。":"等其他玩家鎖定，就會自動進入下一輪販售；時間到也會開市。")+'</p></div>'
       +'<span class="pill-big">✅ 準備完成</span></div>'
-      +'<div class="wait-layout"><div class="surface"><h2>🍹 我的三款招牌飲品</h2>'
+      +roundSummaryBanner()+'<div class="wait-layout"><div class="surface"><h2>🍹 我的三款招牌飲品</h2>'
       +'<div class="waiting-products">'+me.products.filter(Boolean).map((p,i)=>'<div class="waiting-product"><span>'+p.emoji+'</span><b>'+esc(p.name)+'</b><small>品質 '+p.quality+' · 🪙 '+p.price+' · '+p.mix.join("：")+'</small></div>').join("")+'</div>'
       +'<h3>🎀 已選裝飾</h3><div class="benefit-list">'+me.decor.map(id=>{const d=decorateById(id);return d?'<div>'+d.emoji+' <b>'+d.name+'</b> · '+d.desc+'</div>':"";}).join("")+'</div>'
       +'<p class="hint">此輪已鎖定。下一輪準備期會重新開放設定，所有已解鎖配方與進化等級都會保留。</p></div>'
@@ -490,6 +498,7 @@
     if(data.serverNow)serverOffset=data.serverNow-Date.now();
     if(data.round)room.round=data.round;
     setText("timeText",timeText());
+    setText("prepCountdown",timeText());
     if(old!==room.phase&&role)render();
   });
   socket.on("player:state",data=>{
