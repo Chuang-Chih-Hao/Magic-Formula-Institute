@@ -239,3 +239,117 @@ b,strong{font-weight:900}
 .npc-score strong{font-size:15px;color:#9a795c;white-space:nowrap}
 .npc-score.top{background:#f1f8e9;border:2px solid #b9dfb2}
 .npc-score.top strong{color:#478a62}
+
+
+/* FAIR 3.0: fixed-coordinate, resolution-independent layout.
+   We render a single 1600x1000 composition and only apply uniform scaling.
+   All panels keep their positions on phone, tablet, laptop and projector;
+   very narrow screens are best viewed in landscape. */
+html,body{width:100%;height:100%;margin:0;overflow:hidden}
+#app{
+  position:fixed;left:0;top:0;
+  width:1600px;height:1000px;max-width:none;min-width:1600px;
+  transform-origin:0 0;
+  transform:translate(var(--fair-offset-x,0px),var(--fair-offset-y,0px)) scale(var(--fair-scale,1));
+  overflow:hidden;background:transparent;
+}
+#app .shell{
+  display:flex;flex-direction:column;
+  width:1600px;max-width:none;height:1000px;
+  margin:0;padding:18px 30px 24px;gap:0;overflow:hidden;
+}
+#app .topbar{flex:none;min-height:63px;margin-bottom:15px;flex-wrap:nowrap}
+#app .brand{min-width:225px}
+#app .brand strong{font-size:19px}
+#app .brand small{font-size:9px}
+#app .brand-icon{width:51px;height:51px;font-size:27px}
+#app .top-actions{flex-wrap:nowrap}
+#app .chip{font-size:12px}
+#app .heading-row{flex:none;min-height:100px;flex-direction:row;align-items:center;margin-bottom:14px}
+#app .heading-row h1{font-size:34px}
+#app .heading-row p{font-size:13px}
+#app .surface{padding:17px;box-shadow:0 5px 0 #e6cfb5,0 10px 26px #846a5420}
+#app .prep-grid{
+  display:grid!important;
+  grid-template-columns:445px 515px minmax(0,1fr)!important;
+  grid-template-rows:minmax(0,1fr);
+  gap:15px;flex:1;min-height:0;
+}
+#app .prep-grid>section{
+  grid-column:auto!important;grid-row:auto!important;
+  min-width:0;min-height:0;height:100%;max-height:none;
+  overflow-y:auto;overscroll-behavior:contain;
+  scrollbar-color:#ddbfad transparent;scrollbar-width:thin;
+}
+#app .unlock-grid{grid-template-columns:repeat(3,minmax(0,1fr))!important}
+#app .decor-grid,#app .theme-grid{grid-template-columns:repeat(2,minmax(0,1fr))}
+#app .teacher-grid{
+  display:grid!important;grid-template-columns:540px minmax(0,1fr)!important;
+  grid-template-rows:minmax(0,1fr);gap:16px;flex:1;min-height:0;
+}
+#app .teacher-grid>.surface{min-height:0;overflow-y:auto}
+#app .teacher-grid .map-viewport{max-width:100%;width:100%}
+#app .map-viewport{overflow:hidden}
+#app .map-viewport canvas{
+  display:block;width:100%;min-width:0!important;
+  height:auto;aspect-ratio:1040/680;
+}
+#app .wait-layout{
+  display:grid!important;grid-template-columns:540px minmax(0,1fr)!important;
+  grid-template-rows:minmax(0,1fr);gap:18px;flex:1;min-height:0;
+}
+#app .wait-layout>.surface{min-height:0;overflow-y:auto}
+#app .market-layout{
+  display:grid!important;
+  grid-template-columns:960px minmax(0,1fr)!important;
+  grid-template-rows:minmax(0,1fr);
+  gap:18px;flex:1;min-height:0;overflow:hidden;
+}
+#app .market-main{
+  display:flex;flex-direction:column;
+  overflow-y:auto;min-height:0;
+  scrollbar-width:thin;scrollbar-color:#ddbfad transparent;
+}
+#app .market-main .map-viewport{
+  flex:none;width:83%;margin:0 auto;
+}
+#app .market-main .map-legend{margin:8px 0;flex:none}
+#app .market-main .surface-inset{flex:none;margin-top:5px}
+#app .market-side{
+  display:flex;flex-direction:column;gap:12px;
+  min-height:0;overflow-y:auto;
+  scrollbar-width:thin;scrollbar-color:#ddbfad transparent;
+}
+#app .market-side .surface{flex:none}
+#app .menu-board{grid-template-columns:repeat(3,minmax(0,1fr))!important}
+#app .welcome{
+  width:1520px;max-width:none;height:1000px;
+  margin:auto;padding:24px 20px 18px;
+  overflow:hidden;display:flex;flex-direction:column;
+}
+#app .landing-head{flex:none;min-height:64px;margin-bottom:16px}
+#app .landing-head .chip{display:inline-flex}
+#app .landing-cols{
+  flex:1;min-height:0;
+  grid-template-columns:1.4fr .75fr!important;
+  align-items:stretch;
+}
+#app .login-stack{display:flex!important;flex-direction:column;gap:18px}
+#app .welcome-art{min-height:0;padding:27px 32px 0}
+#app .welcome-art h1{font-size:60px}
+#app .welcome-art p{font-size:16px}
+#app .illustration-market{height:300px;margin:22px -32px 0}
+#app .mini-shop.s1{left:14%;transform:rotate(-3deg)!important}
+#app .mini-shop.s2{right:13%;transform:rotate(4deg)!important}
+#app .mini-shop{bottom:49px}
+#app .scene-pets{letter-spacing:18px;font-size:34px}
+#app .landing-foot{flex:none;padding:14px 0}
+#app .choices{grid-template-columns:repeat(2,minmax(0,1fr))}
+#app .finish-action{flex:none}
+#app .round-result{margin:12px 0;padding:11px 12px;border:2px solid #ecd5af;background:#fff4da;color:#a37b5a;border-radius:14px;font-size:12px;font-weight:900}
+#app .npc-quote{margin:6px 0 10px;padding:10px;border-radius:13px;background:#fff2df;border:1px solid #efd4be;font-size:13px;font-weight:800;color:#996e58;min-height:42px}
+#app .ai-dialogue{display:block;font-size:11px;margin-top:6px;padding:5px 8px;background:#fff5e9;border-radius:8px;color:#937061}
+#app .quality-pill{font-size:12px}
+#app .unlock-card{min-height:105px}
+#app .unlock-card.unlocked{opacity:1;border-color:#a4d2a5;background:#eff8ea}
+#app .unlock-card:disabled{opacity:.8;cursor:default}
