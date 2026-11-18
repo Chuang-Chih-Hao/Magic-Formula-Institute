@@ -166,7 +166,8 @@ test("teacher and 4 pupils must unlock 3 different drinks, lock, then start the 
       for(const id of ["berry","moon","forest"]){
         assert.equal((await rpc(socket,"quest:get",{target:id})).ok,true);
         const q=states[i-1].question;
-        assert.equal(q.action,undefined,"answer index must not leak to student");
+        assert.equal(q.action,"unlock","student should see if this is an unlock or evolution");
+        assert.equal(q.correctIndex,undefined,"answer index must not leak to student");
         const m=q.prompt.match(/(\d+)：(\d+)/);
         assert.ok(m,"visible simplification ratio");
         const gcd=(a,b)=>b?gcd(b,a%b):a;
