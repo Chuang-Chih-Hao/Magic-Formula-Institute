@@ -243,11 +243,14 @@ function geminiNpcRequest(visit, model = process.env.GEMINI_MODEL || "gemini-3.5
   // The model ID must be a model name, never an arbitrary URL.
   if (!/^gemini-[a-z0-9.-]+$/.test(model)) throw Error("Invalid Gemini model name");
   const system = "你是國小六年級可愛魔法飲料店遊戲中的虛構動物顧客。只回覆一句自然、活潑、可愛的繁體中文台詞，最多30個中文字。"
-    + "符合角色喜好與交易結果：如果已購買請表現開心，沒有購買則不要說已買到。"
+    + "符合角色喜好、交易結果與明確的成交／未成交原因。已購買請表現開心；未購買不得聲稱買到或喝到了飲料。"
     + "不要提到AI、系統、API，不要給出數學題答案，不要出現不適合小學生的內容。不要輸出引號或其他解釋。";
   const context = "動物角色：" + visit.customer + "；偏好口味：" + visit.favorite
     + "；可用預算：" + visit.budget + "金幣；購買結果：" + (visit.bought ? "已購買" : "未購買")
-    + "；飲品：" + (visit.itemName || "沒有商品") + "。請說一句符合情境的顧客對話。";
+    + "；飲品：" + (visit.itemName || "沒有商品")
+    + "；對話階段：" + (visit.stage === "逛街中" ? "逛街中" : visit.bought ? "完成購買" : "決定不購買")
+    + "；實際原因：" + clean(visit.reason || "觀察其他商店", 70)
+    + "。請根據原因說一句不重複、符合此情境的顧客對話。";
   return {
     url: "https://generativelanguage.googleapis.com/v1beta/models/" + model + ":generateContent",
     body: {
