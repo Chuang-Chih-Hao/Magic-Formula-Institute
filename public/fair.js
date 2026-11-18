@@ -252,18 +252,22 @@
     if(!events.length)return '<div class="empty-feed">🐾 動物顧客還沒進場，開市後會自動逛攤！</div>';
     return events.slice(0,9).map(e=>'<div class="event '+esc(e.kind)+'">'
       +'<span class="event-emoji">'+(e.emoji||"🎪")+'</span>'
-      +'<div><strong>'+esc(e.message)+'</strong>'+(e.why?'<small>💭 '+esc(e.why)+'</small>':"")+(npcLines[e.npcId]?'<small class="ai-dialogue">💬 AI 顧客：'+esc(npcLines[e.npcId])+'</small>':"")+'</div></div>').join("");
+      +'<div><strong>'+esc(e.message)+'</strong>'+(e.why?'<small>💭 '+esc(e.why)+'</small>':"")
+      +'<small class="ai-dialogue">💬 '+(npcLines[e.npcId]?"Gemini 顧客":"顧客心聲")
+      +'：'+esc(npcLines[e.npcId]||e.dialogue||"下次再來！")+'</small></div></div>').join("");
   }
   function compareNpc() {
     const all=room?.npcs||[];
     const n=all.find(x=>x.id===selectedNpcId)||all.find(x=>x.stage==="wandering")||all[all.length-1];
-    if(!n)return '<div class="empty-feed">🐰 還沒有顧客進場。NPC 一入場，就會在這裡顯示比較過的攤位評分。</div>';
+    if(!n)return '<div class="empty-feed">🐰 還沒有顧客進場。NPC 一入場，就會顯示比較過的攤位評分與心聲。</div>';
     const scores=n.visitorScores||[];
     const top=scores[0];
     const decided=n.stage!=="wandering";
     return '<div class="npc-head"><span class="npc-big">'+esc(n.emoji)+'</span>'
       +'<div><b>'+esc(n.name)+'</b><small>偏好 '+esc(n.flavor)+' · 預算 🪙 '+n.budget+'</small></div>'
       +'<span class="npc-stage">'+(decided?(n.bought?"✅ 已購買":"🧺 沒購買"):"🚶 逛街比價中")+'</span></div>'
+      +'<p class="npc-quote">💬 '+esc(npcDialogue(n,room.paused?room.serverNow||localTime():localTime()))+'</p>'
+      +(n.reason&&decided?'<p class="npc-tip">📌 實際原因：'+esc(n.reason)+'</p>':"")
       +'<p class="npc-tip">比較方式：飲品品質＋價格合理度＋喜好口味＋攤位裝飾加分（越高越有吸引力）。</p>'
       +'<div class="npc-scores">'+scores.map((x,i)=>'<div class="npc-score '+(i===0?"top":"")+'" data-action="compare-booth" data-id="'+esc(x.shopId)+'">'
         +'<b>'+(i===0?"💛 ":"")+esc(x.shopName)+'</b>'
@@ -745,12 +749,30 @@
     circle(c,0,-12,2,"#926a68");
     c.restore();
   }
+  function npcDialogue(n,now){
+    if(npcLines[n.id])return npcLines[n.id];
+    if(n.stage!=="wandering")return n.speech||"今天先逛到這裡！";
+    const thoughts=n.thoughts||[];
+    if(!thoughts.length)return n.speech||"好多魔法飲料！";
+    const seconds=Math.max(0,now-n.enterAt)/1000;
+    if(seconds<3)return n.speech||thoughts[0];
+    const idx=(Math.floor(seconds/3)+n.id.charCodeAt(0))%thoughts.length;
+    const p=npcXY(n,now);
+    const current=room?.players?.find((shop,i)=>{
+      const loc=shopPos[i];
+      return Math.hypot(loc.x-p.x,loc.y-p.y)<66;
+    });
+    if(current&&Math.floor(seconds)%3===0)return "看看 "+shortText(current.shopName,6)+" 賣什麼？";
+    return thoughts[idx];
+  }
   function drawNpcBubble(c,n,x,y,t){
-    const arriving=n.stage==="wandering"&&localTime()<n.decideAt;
-    const word=npcLines[n.id]||(arriving?"在逛攤比價…":n.bought?"買到喜歡的飲料！":"下次再來看看！");
-    R(c,x-66,y-77,132,28,13,"#fffef3","#be9b82",2);
-    drawText(c,shortText(word,11),x,y-63,"900 11px 'Noto Sans TC'","#835a53");
-    poly(c,[[x-8,y-49],[x+7,y-49],[x,y-43]],"#fffef3");
+    const word=String(npcDialogue(n,t)||"").slice(0,38);
+    const rows=word.length>16?[word.slice(0,16),word.slice(16,32)]:[word];
+    const h=rows.length===2?50:35;
+    R(c,x-109,y-92,218,h,13,"#fffef3","#be9b82",2.5);
+    rows.forEach((line,i)=>drawText(c,line,x,y-92+(rows.length===2?14:17)+i*18,
+      "900 13px 'Noto Sans TC'","#835a53"));
+    poly(c,[[x-8,y-92+h],[x+7,y-92+h],[x,y-87+h]],"#fffef3");
   }
   function paint(){
     const canvas=$("fairCanvas");
