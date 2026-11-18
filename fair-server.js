@@ -140,8 +140,8 @@ function buildProduct(menu,evolution={}){
 function activeMarketBonus(player,now=Date.now()){
   let total=0;
   const detail=[];
-  if((player.promoUntil||0)>now){total+=27;detail.push("宣傳活動 +27");}
-  if((player.tastingUntil||0)>now){total+=15;detail.push("免費試飲 +15");}
+  // Advertising attracts additional NPC visitors; tasting raises conversion at
+  // the purchase decision. Neither artificially changes comparative shop score.
   if((player.festivalBuffUntil||0)>now){total+=22;detail.push("幸運流星 +22");}
   if((player.fogUntil||0)>now){total-=23;detail.push("霧霾干擾 -23");}
   return {score:total,text:detail.join("、")};
@@ -175,7 +175,8 @@ function createRoom(){
   const room={code,hostSecret:uid()+uid(),hostId:null,phase:"setup",round:1,
     duration:MARKET_SECONDS,remaining:FIRST_PREP_SECONDS,prepDuration:CYCLE_SECONDS-MARKET_SECONDS,
     prepEndsAt:0,sessionStartedAt:0,gameEndsAt:0,roundSummary:null,endsAt:0,paused:false,
-    players:[],npcs:[],events:[],activeEvents:[],nextEventAt:0,spawnAt:0,lastAIAt:0,entrySeq:0,
+    players:[],npcs:[],events:[],activeEvents:[],nextEventAt:0,spawnAt:0,promoSpawnAt:0,
+    promoCursor:0,lastAIAt:0,entrySeq:0,
     createdAt:Date.now()};
   rooms.set(code,room);return room;
 }
@@ -185,7 +186,7 @@ function newPlayer(name){
     unlocked:[],evolution:{},ready:false,research:0,attempts:0,correct:0,
     question:null,questionHistory:[],result:null,specialOffer:null,
     promoUntil:0,tastingUntil:0,shieldUntil:0,fogUntil:0,festivalBuffUntil:0,
-    marketActionUntil:0,
+    marketActionUntil:0,promoLeads:0,tastingConversions:0,
     sales:0,revenue:0,cost:0,profit:0,stars:0,visits:[]};
 }
 function productPublic(menu,evolution){return buildProduct(menu,evolution);}
@@ -194,6 +195,7 @@ function playerPublic(p,i) {
     decor:p.decor,products:p.products.map(menu=>productPublic(menu,p.evolution)),ready:p.ready,
     revenue:cents(p.revenue),cost:cents(p.cost),profit:cents(p.profit),
     sales:p.sales,stars:p.stars,correct:p.correct,
+    promoLeads:p.promoLeads||0,tastingConversions:p.tastingConversions||0,
     boosts:{promoUntil:p.promoUntil||0,tastingUntil:p.tastingUntil||0,
       shieldUntil:p.shieldUntil||0,fogUntil:p.fogUntil||0,
       festivalBuffUntil:p.festivalBuffUntil||0,marketActionUntil:p.marketActionUntil||0}};
@@ -225,7 +227,7 @@ function sendState(io,r){
   io.to(r.code).emit("room:state",roomPublic(r));
   r.players.forEach(p=>{if(p.socketId)io.to(p.socketId).emit("player:state",selfPublic(p));});
 }
-function pickCustomer(r){
+function pickCustomer(r,{leadShopId=null}={}){
   let spec=choose(NPCS);
   if(r.featuredFlavorUntil>Date.now())spec=choose(NPCS.filter(n=>n.flavor===r.featuredFlavor));
   const budget=rand(28,78);
@@ -235,7 +237,10 @@ function pickCustomer(r){
   const shops=r.players.map((_p,i)=>i);
   const winner=offers[0]||null;
   const alternatives=shops.filter(x=>!winner||x!==winner.booth).sort(()=>Math.random()-.5);
-  const browse=alternatives.slice(0,Math.min(2,alternatives.length));
+  const leadBooth=r.players.findIndex(p=>p.id===leadShopId);
+  const browse=leadBooth>=0?
+    [leadBooth,...alternatives.filter(x=>x!==leadBooth)].slice(0,2):
+    alternatives.slice(0,Math.min(2,alternatives.length));
   const lastShop=winner?winner.booth:choose(shops);
   const path=[{...MAP.entry,t:0},{...MAP.hub,t:2500}];
   let ms=2500;
@@ -253,6 +258,7 @@ function pickCustomer(r){
     color:profile.color,flavor:profile.flavor,budget,
     enterAt,decideAt:enterAt+decideAfter,leaveAt:enterAt+decideAfter+15000,
     path,shopId:winner?.player.id||null,shopIndex:lastShop,
+    advertisedFor:leadBooth>=0?leadShopId:null,
     chosenProduct:winner?.offer?.item?.recipeId||null,
     stage:"wandering",speech:choose([
       "想喝一杯"+profile.flavor+"的魔法飲料！",
@@ -282,13 +288,18 @@ function settleNpc(io,r,n) {
   if(n.stage!=="wandering")return;
   const p=r.players.find(x=>x.id===n.shopId);
   const offer=n.reasoning;
-  const likely=offer?clamp(0.44+offer.score*0.004,0.46,0.97):0;
+  const baseLikely=offer?clamp(0.44+offer.score*0.004,0.46,0.97):0;
+  const tastingBoost=!!p&&!!offer&&(p.tastingUntil||0)>Date.now()?0.22:0;
+  const likely=clamp(baseLikely+tastingBoost,0,0.99);
   const bought=!!p&&!!offer&&Math.random()<likely;
+  n.tastingBonus=tastingBoost;
+  n.purchaseChance=likely;
   n.bought=bought;
   n.stage=bought?"bought":"left";
   if(bought){
     const item=offer.item;
     p.sales++;
+    if(tastingBoost)p.tastingConversions=(p.tastingConversions||0)+1;
     p.revenue=cents(p.revenue+item.price);
     p.cost=cents(p.cost+item.cost);
     p.profit=cents(p.revenue-p.cost);
@@ -314,14 +325,15 @@ function settleNpc(io,r,n) {
   const explanation=bought
     ? "品質"+offer.item.quality+"、售價"+offer.item.price+
       "；"+(offer.flavorMatch?"口味符合偏好；":"偏好口味不同；")+
-      (offer.bonusText||"沒有裝飾加成")
+      (offer.bonusText||"沒有裝飾加成")+(tastingBoost?";🥤試喝讓購買機率 +22 個百分點":"")
     : n.reason+(offer?"；綜合評分 "+offer.score:"");
   const message=bought ? n.name+" 在「"+p.shopName+"」買了 "+offer.item.name+"（"+offer.item.price+"金幣）"
     : n.name+" 逛完小鎮後沒有購買";
   const event={npcId:n.id,kind:bought?"sale":"leave",emoji:n.emoji,
     shopId:p?.id||null,shopName:p?.shopName||null,
     product:bought?offer.item.name:null,price:bought?offer.item.price:0,
-    message,why:explanation,reason:n.reason,dialogue:n.speech,budget:n.budget,flavor:n.flavor,round:r.round};
+    message,why:explanation,reason:n.reason,dialogue:n.speech,budget:n.budget,flavor:n.flavor,
+    tastingBonus,advertisedFor:n.advertisedFor,round:r.round};
   addEvent(r,event);
   io.to(r.code).emit("fair:trade",event);
   if(p){
@@ -339,9 +351,9 @@ function settleNpc(io,r,n) {
 }
 const MARKET_ACTIONS={
   advertise:{name:"魔法招牌攬客",emoji:"📣",cost:18,duration:60000,field:"promoUntil",
-    message:"花 18 金幣在全場大聲宣傳！60 秒內顧客評分 +27"},
+    message:"花 18 金幣！60 秒內每約 4～5 秒額外引來一位顧客，先走到你的攤位看看；不保證成交"},
   tasting:{name:"開放試喝",emoji:"🥤",cost:12,duration:60000,field:"tastingUntil",
-    message:"花 12 金幣提供試喝！60 秒內顧客評分 +15"},
+    message:"花 12 金幣！60 秒內被選中的顧客購買機率提高 22 個百分點，不增加進場人數"},
   shield:{name:"星光防護罩",emoji:"🛡️",cost:15,duration:90000,field:"shieldUntil",
     message:"花 15 金幣保護店鋪！90 秒內抵擋一次突發濃霧"}
 };
@@ -428,7 +440,8 @@ function beginMarket(io,r,now){
   if(r.phase!=="setup"||!r.players.length)return;
   if(r.round===1&&!r.players.every(p=>p.ready))return;
   r.phase="market";r.paused=false;r.remaining=r.duration;r.endsAt=now+r.duration*1000;
-  r.spawnAt=now+1200;r.lastAIAt=0;r.npcs=[];
+  r.spawnAt=now+1200;r.promoSpawnAt=now+4500;r.promoCursor=0;
+  r.lastAIAt=0;r.npcs=[];
   r.activeEvents=[];r.nextEventAt=now+rand(...MARKET_EVENT_INTERVAL);
   r.rushUntil=0;r.featuredFlavorUntil=0;r.featuredFlavor=null;
   for(const p of r.players){
@@ -745,6 +758,7 @@ function runServer(port=PORT){
       const delay=Date.now()-r.pausedAt;
       r.npcs.forEach(n=>{n.enterAt+=delay;n.decideAt+=delay;n.leaveAt+=delay;});
       r.spawnAt+=delay;
+      r.promoSpawnAt+=delay;
       r.nextEventAt+=delay;
       r.activeEvents.forEach(evt=>{evt.expiresAt+=delay;});
       for(const p of r.players){
@@ -769,7 +783,8 @@ function runServer(port=PORT){
       r.sessionStartedAt=r.players.length?resetAt:0;
       r.prepEndsAt=r.players.length?resetAt+FIRST_PREP_SECONDS*1000:0;
       r.gameEndsAt=r.players.length?resetAt+GAME_SECONDS*1000:0;
-      r.npcs=[];r.events=[];r.activeEvents=[];r.nextEventAt=0;r.rushUntil=0;
+      r.npcs=[];r.events=[];r.activeEvents=[];r.nextEventAt=0;r.promoSpawnAt=0;
+      r.promoCursor=0;r.rushUntil=0;
       r.featuredFlavor=null;r.featuredFlavorUntil=0;r.roundSummary=null;
       for(const p of r.players){
         Object.assign(p,{ready:false,sales:0,revenue:0,cost:0,profit:0,stars:0,
@@ -816,8 +831,19 @@ function runServer(port=PORT){
           r.activeEvents=r.activeEvents.filter(evt=>evt.expiresAt>now);
           if(r.activeEvents.length!==activeBefore)changed=true;
           if(now>=r.spawnAt&&r.players.length>0&&r.remaining>25){
-            r.npcs.push(pickCustomer(r));r.npcs=r.npcs.slice(-10);
+            r.npcs.push(pickCustomer(r));r.npcs=r.npcs.slice(-14);
             r.spawnAt=now+(r.rushUntil>now?rand(1500,2500):rand(3200,4700));changed=true;
+          }
+          const promoters=r.players.filter(p=>(p.promoUntil||0)>now);
+          if(promoters.length&&now>=r.promoSpawnAt&&r.remaining>25){
+            const promoted=promoters[r.promoCursor++%promoters.length];
+            const lead=pickCustomer(r,{leadShopId:promoted.id});
+            promoted.promoLeads=(promoted.promoLeads||0)+1;
+            r.npcs.push(lead);r.npcs=r.npcs.slice(-14);
+            r.promoSpawnAt=now+rand(4000,5000);
+            changed=true;
+          }else if(!promoters.length&&now>=r.promoSpawnAt){
+            r.promoSpawnAt=now+1500;
           }
           for(const n of r.npcs){
             if(now>=n.decideAt&&n.stage==="wandering"){settleNpc(io,r,n);changed=true;}
