@@ -367,7 +367,8 @@ function useMarketAction(io,room,p,type,now=Date.now()){
   p.profit=cents(p.revenue-p.cost);
   p[action.field]=now+action.duration;
   p.marketActionUntil=now+22000;
-  const evt={kind:"action",emoji:action.emoji,round:room.round,shopId:p.id,
+  if(type==="advertise")room.promoSpawnAt=Math.min(room.promoSpawnAt||now+1000,now+1200);
+  const evt={kind:"action",type,startedAt:now,emoji:action.emoji,round:room.round,shopId:p.id,
     message:"「"+p.shopName+"」啟動 "+action.name+"！",why:action.message,
     expiresAt:now+action.duration};
   addEvent(room,evt);
@@ -381,7 +382,7 @@ function triggerMarketEvent(io,room,now=Date.now(),forcedKind){
   const types=["stardust","fog","golden","rush","parade","scroll"];
   const type=forcedKind||choose(types);
   const evt={kind:"market-event",type,round:room.round,shopId:p.id,
-    expiresAt:now+30000,emoji:"🎪"};
+    startedAt:now,expiresAt:now+30000,emoji:"🎪"};
   if(type==="stardust"){
     p.festivalBuffUntil=Math.max(p.festivalBuffUntil||0,now+30000);
     Object.assign(evt,{emoji:"🌠",name:"流星糖粉雨",message:"🌠 流星糖粉落在「"+p.shopName+"」！",
@@ -401,7 +402,7 @@ function triggerMarketEvent(io,room,now=Date.now(),forcedKind){
     const amount=rand(8,16);
     p.revenue=cents(p.revenue+amount);
     p.profit=cents(p.revenue-p.cost);
-    Object.assign(evt,{emoji:"🎟️",name:"金色幸運券",expiresAt:now+14000,
+    Object.assign(evt,{emoji:"🎟️",name:"金色幸運券",amount,expiresAt:now+14000,
       message:"🎟️「"+p.shopName+"」撿到幸運金券！",
       why:"幸運獎金 +"+amount+" 金幣，已計入收入與累積淨利（不是飲料銷量）"});
   }else if(type==="scroll"){
@@ -424,7 +425,7 @@ function triggerMarketEvent(io,room,now=Date.now(),forcedKind){
   }else if(type==="parade"){
     const flavor=choose(["甜美","清爽","夢幻"]);
     room.featuredFlavor=flavor;room.featuredFlavorUntil=now+30000;
-    Object.assign(evt,{emoji:"🎈",name:"口味遊行",message:"🎈 "+flavor+"口味主題遊行開始！",
+    Object.assign(evt,{emoji:"🎈",name:"口味遊行",flavor,message:"🎈 "+flavor+"口味主題遊行開始！",
       why:"30 秒內新入場的 NPC 會特別喜歡「"+flavor+"」口味，請觀察誰最有優勢"});
   }else throw Error("Unknown market event kind");
   room.activeEvents=(room.activeEvents||[]).filter(x=>x.expiresAt>now);
