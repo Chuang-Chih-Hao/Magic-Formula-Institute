@@ -361,3 +361,40 @@ html,body{width:100%;height:100%;margin:0;overflow:hidden}
 #app .round-score span{background:#fffcf0;border-radius:8px;padding:4px 7px}
 #app .round-score strong{color:#55936b}
 #app .round-score small{margin-left:auto;font-size:10px}
+
+/* Market: scroll the entire fixed-coordinate stage instead of trapping the
+   wheel inside two short, independently scrolling columns. */
+#app .market-shell {
+  overflow-y:auto!important;
+  overflow-x:hidden!important;
+  scrollbar-width:auto;
+  scrollbar-color:#cda995 #fff1dc;
+  overscroll-behavior-y:contain;
+  scroll-behavior:auto;
+}
+#app .market-shell .market-layout {
+  flex:none!important;
+  height:auto!important;
+  min-height:980px!important;
+  overflow:visible!important;
+  grid-template-rows:auto!important;
+  align-items:start!important;
+}
+#app .market-shell .market-main,
+#app .market-shell .market-side {
+  height:auto!important;
+  max-height:none!important;
+  min-height:0!important;
+  overflow:visible!important;
+}
+#app .market-shell .events {
+  max-height:none!important;
+  overflow:visible!important;
+}
+#app .overall-clock {
+  background:#ffecd7;
+  border-color:#e7b998;
+  color:#a15d51;
+  font-variant-numeric:tabular-nums;
+}
+#app .market-shell .surface-inset {margin-bottom:12px}
