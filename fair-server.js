@@ -325,7 +325,7 @@ function settleNpc(io,r,n) {
   const explanation=bought
     ? "品質"+offer.item.quality+"、售價"+offer.item.price+
       "；"+(offer.flavorMatch?"口味符合偏好；":"偏好口味不同；")+
-      (offer.bonusText||"沒有裝飾加成")+(tastingBoost?";🥤試喝讓購買機率 +22 個百分點":"")
+      (offer.bonusText||"沒有裝飾加成")+(tastingBoost?";🥤試喝讓購買機率提高（最多 22 個百分點）":"")
     : n.reason+(offer?"；綜合評分 "+offer.score:"");
   const message=bought ? n.name+" 在「"+p.shopName+"」買了 "+offer.item.name+"（"+offer.item.price+"金幣）"
     : n.name+" 逛完小鎮後沒有購買";
@@ -353,7 +353,7 @@ const MARKET_ACTIONS={
   advertise:{name:"魔法招牌攬客",emoji:"📣",cost:18,duration:60000,field:"promoUntil",
     message:"花 18 金幣！60 秒內每約 4～5 秒額外引來一位顧客，先走到你的攤位看看；不保證成交"},
   tasting:{name:"開放試喝",emoji:"🥤",cost:12,duration:60000,field:"tastingUntil",
-    message:"花 12 金幣！60 秒內被選中的顧客購買機率提高 22 個百分點，不增加進場人數"},
+    message:"花 12 金幣！60 秒內被選中的顧客購買機率最高提高 22 個百分點，不增加進場人數"},
   shield:{name:"星光防護罩",emoji:"🛡️",cost:15,duration:90000,field:"shieldUntil",
     message:"花 15 金幣保護店鋪！90 秒內抵擋一次突發濃霧"}
 };
