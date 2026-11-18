@@ -39,7 +39,26 @@
   const emoji=(str)=>str||"🍹";
   const phase=()=>!room?"":room.phase==="setup"?"準備攤位":room.phase==="market"?"園遊會營業中":"總結算";
   const roundText=()=>room?"第 "+room.round+" 輪":"";
-  const timeText=()=>room?.phase==="setup"&&room.round===1?"不限時":clock(room?.remaining);
+  const timeText=()=>clock(room?.remaining);
+  const overallText=()=>clock(room?.totalRemaining??1800);
+  const scrollablePanels=[".shell",".prep-decor",".prep-drinks",".prep-questions",".market-main",".market-side",".events"];
+  function redrawWithoutJump(draw){
+    const positions=new Map();
+    for(const selector of scrollablePanels){
+      const el=root.querySelector(selector);
+      if(el)positions.set(selector,{top:el.scrollTop,left:el.scrollLeft});
+    }
+    const active=document.activeElement;
+    const focusedId=active&&root.contains(active)?active.id:null;
+    draw();
+    for(const [selector,pos] of positions){
+      const el=root.querySelector(selector);
+      if(el){el.scrollTop=pos.top;el.scrollLeft=pos.left;}
+    }
+    if(focusedId&&$(focusedId)){
+      try{$(focusedId).focus({preventScroll:true});}catch(_){}
+    }
+  }
   const localTime=()=>Date.now()+serverOffset;
   const chooseById=(id)=>room?.recipes?.find(r=>r.id===id);
   const decorateById=(id)=>room?.decorations?.find(d=>d.id===id);
@@ -102,7 +121,8 @@
     return '<div class="topbar">'+logo()+'<div class="top-actions">'
       +'<span class="chip">🏠 房間 <b class="copy" data-action="copy">'+esc(room.code)+'</b></span>'
       +'<span class="chip" id="phaseLabel">'+(room.paused?"⏸ 暫停中":"✦ "+roundText()+" · "+phase())+'</span>'
-      +'<span class="chip clock">⏳ <b id="timeText">'+timeText()+'</b></span>'
+      +'<span class="chip clock">⏳ 本輪 <b id="timeText">'+timeText()+'</b></span>'
+      +'<span class="chip overall-clock">🏁 全場剩餘 <b id="overallText">'+overallText()+'</b></span>'
       +'<button class="btn tiny outline" data-action="leave">離開</button>'
       +'</div></div>';
   }
@@ -136,14 +156,14 @@
     renderMode="hostsetup";
     root.innerHTML='<main class="shell">'+topbar()
       +'<div class="heading-row"><div><div class="eyebrow">TEACHER · PREPARATION</div><h1>🎪 魔法園遊會準備中</h1>'
-      +'<p>'+(room.round===1?"第一輪準備不限時，學生需先答題解鎖三款飲料並鎖定。":
+      +'<p>'+(room.round===1?"第一輪準備限時 6 分鐘，學生需先答題解鎖三款飲料並鎖定；逾時會自動補齊未完成的菜單。":
         "第 "+room.round+" 輪調整期："+Math.round(room.prepDuration/60)+" 分鐘後強制開市；全員提前鎖定會立即開始。")
         +'</p></div>'
       +'<div class="room-ticket"><small>投影或分享代碼</small><strong>'+esc(room.code)+'</strong><button class="btn tiny outline" data-action="copy">複製代碼</button></div></div>'
       +roundSummaryBanner()+'<div class="teacher-grid"><div class="surface"><h2>🐻 四間攤位的準備狀態</h2>'
       +'<div id="readyList" class="ready-list">'+room.players.map(boothSummary).join("")+'</div>'
       +'<p class="hint">第 '+room.round+' 輪 · 已鎖定 '+room.players.filter(x=>x.ready).length+' / '+room.players.length+
-      ' 位。'+(room.round===1?"第一輪沒有時間壓力。":"逾時未鎖定者沿用上一輪已儲存的菜單。")
+      ' 位。'+(room.round===1?"第一輪準備剩餘 "+timeText()+"，時間到會自動補足未完成者的菜單。":"逾時未鎖定者沿用上一輪已儲存的菜單。")
       +'</p>'+(room.round>1?'<div class="round-result">🏆 上一輪結束，學生可以換三款商品、改價格、再解題進化。</div>':"")
       +hostActions()
       +'</div><div class="surface"><h2>🗺️ 園遊會地圖預覽</h2><p class="sub">每個學生的建築與裝飾會出現在固定攤位。</p>'
@@ -206,7 +226,7 @@
     root.innerHTML='<main class="shell">'+topbar()
       +'<div class="heading-row"><div><div class="eyebrow">MAGIC FAIR · DESIGN YOUR BOOTH</div>'
       +'<h1>🌼 '+roundText()+' · 魔法準備</h1><p>'+
-      (room.round===1?"第一輪準備不計時，必須先答對至少三道題，解鎖三款飲品。":
+      (room.round===1?"第一輪準備限時 6 分鐘，先解題解鎖三款飲品；逾時時系統會提供未完成學生基本配方。":
         "本輪可更換商品、價格、配方和裝飾；若未鎖定，倒數結束時沿用上輪已儲存設定。")
       +'</p></div>'
       +'<div class="research-score">📚 研究星星 <b>'+me.research+'</b><small>答對比與比例題獲得</small></div></div>'
@@ -223,7 +243,7 @@
       +'<section class="surface prep-drinks"><div class="step-head"><b>02</b><div><h2>三款招牌飲品</h2><p>先從題目解鎖至少三種，再決定哪些在本輪販售。可透過額外題目進化品質到 115 分！</p></div></div>'
       +'<div class="products">'+draft.products.map(productCard).join("")+'</div></section>'
       +'<section class="surface prep-questions"><div class="step-head"><b>03</b><div><h2>數學配方研究桌</h2><p>🔐 第一次答對可解鎖；🌟 再答對使該配方進化，每級品質 +5，最高 Lv.3。</p></div></div>'
-      +'<p class="hint">目前解鎖 '+me.unlocked.length+' / '+room.recipes.length+' 種，至少需要 3 種才能鎖定。本輪尚餘 <b id="prepCountdown">'+(room.round===1?"不限時":clock(room.remaining))+'</b>。</p>'
+      +'<p class="hint">目前解鎖 '+me.unlocked.length+' / '+room.recipes.length+' 種，至少需要 3 種才能鎖定。本輪尚餘 <b id="prepCountdown">'+clock(room.remaining)+'</b>；全場 30 分鐘會自動結束。</p>'
       +'<div class="unlock-grid">'+room.recipes.map(recipeCard).join("")+'</div>'
       +'<button class="btn outline full" data-action="practice" style="margin:12px 0">🧠 另外挑戰一題比例應用</button>'
       +'<div id="quizArea">'+questZone()+'</div>'
@@ -322,6 +342,7 @@
     if($("npcComparison"))$("npcComparison").innerHTML=compareNpc();
     setText("npcCount",room.npcs.filter(n=>n.stage==="wandering").length);
     setText("timeText",timeText());
+    setText("overallText",overallText());
     setText("phaseLabel",room.paused?"⏸ 暫停中":"✦ "+roundText()+" · "+phase());
   }
   function render(){
@@ -329,10 +350,13 @@
     if(room.phase==="market"||room.phase==="finished"){
       if(renderMode!=="market"||lastRoomPhase!==room.phase)marketPage();
       else updateMarket();
-    }else if(isTeacher())hostSetup();
+    }else if(isTeacher())redrawWithoutJump(hostSetup);
     else if(!me){return;}
     else if(me.ready)readyWaiting();
-    else {if(lastRoomPhase&&lastRoomPhase!=="setup")draft=null;studentSetup();}
+    else {
+      if(lastRoomPhase&&lastRoomPhase!=="setup")draft=null;
+      redrawWithoutJump(studentSetup);
+    }
     lastRoomPhase=room.phase;
   }
 
@@ -486,22 +510,32 @@
   socket.on("room:state",data=>{
     if(data.serverNow)serverOffset=data.serverNow-Date.now();
     if(role&&data.code!==room?.code)return;
-    const old=room?.phase;
+    const old=room?.phase,oldRound=room?.round;
     room=data;
-    if(role)render();
+    // Do not rebuild a student's active menus when any other pupil changes
+    // their shop: recreating select/options closes the native drop-down.
+    if(role==="student"&&renderMode==="studentsetup"&&me&&!me.ready
+      &&old===room.phase&&oldRound===room.round){
+      setText("timeText",timeText());
+      setText("overallText",overallText());
+      setText("prepCountdown",timeText());
+    }else if(role)render();
     if(old&&old!=="market"&&room.phase==="market")toast("🎉 園遊會開市！請看動物顧客逛攤。");
   });
   socket.on("room:clock",data=>{
     if(!room)return;
     const old=room.phase;
     room.remaining=data.remaining;room.phase=data.phase;room.paused=data.paused;
+    if(Number.isFinite(data.totalRemaining))room.totalRemaining=data.totalRemaining;
     if(data.serverNow)serverOffset=data.serverNow-Date.now();
     if(data.round)room.round=data.round;
     setText("timeText",timeText());
+    setText("overallText",overallText());
     setText("prepCountdown",timeText());
     if(old!==room.phase&&role)render();
   });
   socket.on("player:state",data=>{
+    if(me&&JSON.stringify(me)===JSON.stringify(data))return;
     const wasReady=me?.ready;
     if(wasReady&&!data.ready)draft=null;
     me=data;
