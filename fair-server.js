@@ -410,6 +410,18 @@ function runServer(port=PORT){
       sendState(io,r);
       return {quality:buildProduct(p.products[slot],p.evolution).quality,cost:cents(costFor(mix))};
     });
+    handle("menu:save",({products})=>{
+      const {r,p}=setup();
+      if(!Array.isArray(products)||products.length!==3||products.some(x=>!x||!p.unlocked.includes(x.recipeId)))
+        throw Error("請先答題解鎖並選好三款不同飲品");
+      if(new Set(products.map(x=>x.recipeId)).size!==3)
+        throw Error("同一輪不能販售重複配方");
+      const validated=products.map(x=>buildProduct(x,p.evolution));
+      if(validated.some(x=>!x))throw Error("請檢查材料比例與每杯售價");
+      p.products=products.map(x=>({recipeId:x.recipeId,mix:[...x.mix],price:x.price}));
+      p.result=null;sendState(io,r);
+      return {qualities:validated.map(x=>x.quality)};
+    });
     handle("quest:get",({target})=>{
       const {r,p}=setup();
       if(target!=="practice"&&!recipeById(target))throw Error("配方不存在");
