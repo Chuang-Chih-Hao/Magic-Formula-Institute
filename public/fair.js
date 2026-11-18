@@ -904,46 +904,144 @@
     return near?0.58:1;
   }
   function drawEventEffects(c,now){
-    for(const event of room.activeEvents||[]){
-      if(event.expiresAt<=now)continue;
-      const shopIndex=room.players.findIndex(p=>p.id===event.shopId);
-      if(event.type==="rush"){
-        drawText(c,"🐾 🐰 🐱 🦊 🐻",520,609,"28px sans-serif");
-        continue;
+    const active=(room.activeEvents||[]).filter(e=>e.expiresAt>now);
+    const stamp=(text,x,y,size=27,color="#8a5d64")=>{
+      c.save();
+      c.font='900 '+size+'px "Noto Sans TC","Apple Color Emoji",sans-serif';
+      c.textAlign="center";c.textBaseline="middle";
+      c.fillStyle=color;c.fillText(text,x,y);
+      c.restore();
+    };
+    const sparkle=(x,y,r=6,color="#fff8b8")=>{
+      c.save();c.strokeStyle=color;c.lineWidth=3;
+      c.beginPath();c.moveTo(x-r,y);c.lineTo(x+r,y);
+      c.moveTo(x,y-r);c.lineTo(x,y+r);c.stroke();c.restore();
+    };
+    for(const event of active){
+      const i=room.players.findIndex(p=>p.id===event.shopId);
+      const pos=i>=0?shopPos[i]:{x:520,y:325};
+      const age=Math.max(0,now-(event.startedAt||now));
+      const loop=now/1000;
+      const remain=Math.ceil(Math.max(0,event.expiresAt-now)/1000);
+      c.save();
+      // A big on-map effect announcement appears for the entire event duration.
+      c.shadowBlur=12;c.shadowColor="#44322d80";
+      R(c,224,16,592,60,23,"#fff6d8ee","#ce9e67",4);
+      c.shadowBlur=0;
+      stamp((event.emoji||"✨")+" "+(event.name||"魔法驚喜")+"  ·  "+remain+"秒",
+        520,46,26,"#805461");
+      if(i>=0&&event.type!=="rush"&&event.type!=="parade"){
+        // Large golden beacon radiating from the affected booth.
+        const wave=(loop*1.4)%1;
+        c.globalAlpha=.72-wave*.5;
+        c.lineWidth=5;c.strokeStyle=event.type==="fog"?"#737d9e":"#f5b85a";
+        c.beginPath();c.ellipse(pos.x,pos.y-35,110+wave*95,66+wave*42,
+          0,0,Math.PI*2);c.stroke();
+        c.globalAlpha=1;
+        R(c,pos.x-99,pos.y+85,198,37,13,"#fff5dbea","#aa8667",3);
       }
-      if(event.type==="parade"){
-        drawText(c,"🎈 "+(room.featuredFlavor||"")+" 口味遊行 🎈",520,445,
-          "900 24px 'Noto Sans TC'","#ae6f9b");
-        continue;
-      }
-      if(shopIndex<0)continue;
-      const pos=shopPos[shopIndex],pulse=Math.sin(now/410)*5;
-      if(event.type==="fog"){
-        c.save();c.fillStyle="#d5dce9b6";
-        for(let i=0;i<5;i++)circle(c,pos.x-110+i*52,pos.y-15+Math.sin(now/570+i)*9,
-          30+pulse,"#d9dfecce");
-        c.restore();
-        drawText(c,"🌫️ -23",pos.x,pos.y+108,"900 20px sans-serif","#866d83");
-      }else if(event.type==="stardust"){
-        drawText(c,"🌠",pos.x+112,pos.y-125+pulse,"37px sans-serif");
-        drawText(c,"⭐ +22",pos.x,pos.y+113,"900 20px sans-serif","#b08256");
-      }else if(event.type==="shielded"){
-        circle(c,pos.x,pos.y-41,112,null,"#a8c8f3",4);
-        drawText(c,"🛡️",pos.x+115,pos.y-95,"32px sans-serif");
+      if(event.type==="stardust"){
+        // Dense meteor shower with sparkling trails and falling stars.
+        const n=45;
+        for(let p=0;p<n;p++){
+          const lane=(p*73)%242-121;
+          const fall=((age*.18+p*39)%290)-205;
+          const px=pos.x+lane+Math.sin(loop*1.2+p)*14;
+          const py=pos.y+fall;
+          c.globalAlpha=.55+(p%5)*.095;
+          c.strokeStyle=p%2?"#fff9db":"#f6cb6f";c.lineWidth=2.5;
+          c.beginPath();c.moveTo(px-8,py-15);c.lineTo(px+2,py);c.stroke();
+          sparkle(px+2,py,4+(p%3)*2,p%3?"#fffdf0":"#fac969");
+        }
+        c.globalAlpha=1;
+        stamp("🌠 星光祝福 +22",pos.x,pos.y+103,24,"#9c6a52");
+      }else if(event.type==="fog"){
+        // Rolling translucent mist is visually unmistakable.
+        for(let p=0;p<22;p++){
+          const px=pos.x-180+((p*34+age*.018) %360);
+          const py=pos.y-135+(p%5)*49+Math.sin(loop+p)*11;
+          c.globalAlpha=.38+.17*Math.sin(loop*2+p);
+          c.fillStyle=p%2?"#9ca9bd":"#c9cadc";
+          c.beginPath();c.ellipse(px,py,34+(p%4)*7,22+(p%3)*5,0,0,Math.PI*2);c.fill();
+        }
+        c.globalAlpha=1;
+        stamp("🌫️ 迷霧籠罩 -23",pos.x,pos.y+103,22,"#74647f");
       }else if(event.type==="golden"){
-        drawText(c,"🎟️ 🪙",pos.x+110,pos.y-98+pulse,"26px sans-serif");
+        // Falling coins spiral onto the lucky stall.
+        for(let p=0;p<28;p++){
+          const x=pos.x-125+((p*39)%250)+Math.sin(loop*2+p)*14;
+          const y=pos.y-190+((age*.12+p*31)%275);
+          stamp(p%4===0?"✨":"🪙",x,y,20+(p%3)*4);
+        }
+        stamp("🎟️ 金券 +"+(event.amount||"?"),pos.x,pos.y+103,24,"#ba7f43");
+      }else if(event.type==="rush"){
+        // A visible stream of animals runs from the southern gate up the path.
+        const icons=["🐰","🐻","🐱","🦊","🐿️","🐼","🦌","🐶"];
+        for(let p=0;p<18;p++){
+          const travel=((age*.035+p*49)%460);
+          const xx=520+Math.sin(p*4.1+loop)*45;
+          stamp(icons[p%icons.length],xx,666-travel,28+(p%3)*3);
+          if(p%3===0)sparkle(xx+20,666-travel-14,8,"#fff0a7");
+        }
+        stamp("🐾 動物旅行團！更多顧客進場",520,510,23,"#905c78");
+      }else if(event.type==="parade"){
+        // Large balloons float across the sky and confetti rains over the road.
+        for(let p=0;p<23;p++){
+          const x=80+((p*113+age*.015)%880);
+          const y=125+(p%6)*62+Math.sin(loop*1.5+p)*12;
+          stamp(p%4===0?"🎈":p%4===1?"🎊":p%4===2?"✨":"🎀",x,y,25);
+        }
+        stamp("🎈 "+(event.flavor||room.featuredFlavor||"魔法")+" 口味大遊行",
+          520,466,29,"#ae5f9e");
       }else if(event.type==="scroll"){
-        drawText(c,"📜 ✨",pos.x+110,pos.y-100+pulse,"30px sans-serif");
+        // Falling parchment, orbiting stars, and a large glowing unlock icon.
+        for(let p=0;p<28;p++){
+          const angle=loop*2.3+p*Math.PI/14;
+          const x=pos.x+Math.cos(angle)*(60+(p%5)*16);
+          const y=pos.y-65+Math.sin(angle)*(55+(p%4)*15);
+          sparkle(x,y,4+p%4*2,"#fff5ae");
+        }
+        const dropY=pos.y-185+Math.min(age*.13,116)+Math.sin(loop*4)*8;
+        stamp("📜",pos.x,dropY,68);
+        stamp("🌠 傳說卷軸掉落！",pos.x,pos.y+107,23,"#9060ab");
+      }else if(event.type==="shielded"){
+        const r=125+Math.sin(loop*3)*6;
+        c.lineWidth=7;c.strokeStyle="#8cc6f2a8";
+        c.beginPath();c.arc(pos.x,pos.y-38,r,0,Math.PI*2);c.stroke();
+        stamp("🛡️ 防護成功！",pos.x,pos.y+107,25,"#6c91b8");
       }
+      c.globalAlpha=1;c.restore();
     }
     for(let i=0;i<room.players.length;i++){
       const booth=room.players[i],p=shopPos[i];
-      if((booth.boosts?.promoUntil||0)>now)
-        drawText(c,"📣",p.x-110,p.y-105+Math.sin(now/350)*5,"31px sans-serif");
-      if((booth.boosts?.tastingUntil||0)>now)
-        drawText(c,"🥤",p.x+108,p.y-104,"31px sans-serif");
-      if((booth.boosts?.shieldUntil||0)>now)
-        drawText(c,"🛡️",p.x+106,p.y+100,"25px sans-serif");
+      const promo=(booth.boosts?.promoUntil||0)>now;
+      const tasting=(booth.boosts?.tastingUntil||0)>now;
+      const shield=(booth.boosts?.shieldUntil||0)>now;
+      if(promo){
+        // Actual advertising generates additional walking NPCs, not score points.
+        for(let k=0;k<3;k++){
+          const r=65+(now/15+k*38)%140;
+          c.save();c.strokeStyle="#ea739b";c.lineWidth=4;c.globalAlpha=.85-(r-65)/280;
+          c.beginPath();c.arc(p.x,p.y-65,r,-2.75,-.35);c.stroke();c.restore();
+        }
+        stamp("📣",p.x-121,p.y-130+Math.sin(now/230)*8,41);
+        stamp("加碼招攬人潮",p.x,p.y+110,22,"#b95581");
+      }
+      if(tasting){
+        // Sparkling sample cups tell pupils exactly why conversion rises.
+        for(let k=0;k<14;k++){
+          const x=p.x+90+Math.sin(now/280+k*1.7)*38;
+          const y=p.y-30+(k%5)*21+Math.cos(now/340+k)*9;
+          sparkle(x,y,4+k%3,"#fff9ae");
+        }
+        stamp("🥤🥤",p.x+102,p.y-94+Math.sin(now/280)*8,39);
+        stamp("試喝：成交率 +22%",p.x,p.y+139,20,"#469981");
+      }
+      if(shield){
+        c.save();c.strokeStyle="#8bccf0";c.lineWidth=5;c.globalAlpha=.7;
+        c.beginPath();c.arc(p.x,p.y-40,136+Math.sin(now/470)*6,0,Math.PI*2);c.stroke();c.restore();
+        stamp("🛡️",p.x+120,p.y+95,31);
+      }
     }
   }
   function npcSprite(c,n,x,y,t){
