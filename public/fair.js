@@ -399,7 +399,7 @@
     if(action==="theme"){
       draft.shopName=$("shopName")?.value||draft.shopName;
       draft.theme=b.dataset.id;
-      studentSetup();return;
+      redrawWithoutJump(studentSetup);return;
     }
     if(action==="toggle-decor"){
       draft.shopName=$("shopName")?.value||draft.shopName;
@@ -407,7 +407,7 @@
       if(draft.decor.includes(id))draft.decor=draft.decor.filter(x=>x!==id);
       else if(draft.decor.length<2)draft.decor.push(id);
       else draft.decor=[draft.decor[1],id];
-      studentSetup();return;
+      redrawWithoutJump(studentSetup);return;
     }
     if(action==="save-design"){
       draft.shopName=$("shopName")?.value.trim()||"";
@@ -487,7 +487,7 @@
       p.recipeId=r.id;p.mix=r.ratio.slice();
       for(let k=0;k<3;k++){const input=$("mix-"+i+"-"+k);if(input){input.value=p.mix[k];input.disabled=false;}}
       if($("price-"+i))$("price-"+i).disabled=false;
-      studentSetup();
+      redrawWithoutJump(studentSetup);
       return;
     }else if(el.dataset.change==="mix")p.mix[Number(el.dataset.index)]=Number(el.value);
     else if(el.dataset.change==="price")p.price=Number(el.value);
@@ -772,32 +772,22 @@
     return{x:finish.x,y:finish.y};
   }
   function npcSprite(c,n,x,y,t){
-    const bounce=Math.sin(t/195+(n.id.charCodeAt(0)%7))*.8;
-    c.save();c.translate(x,y+bounce);
-    c.fillStyle="#65815d48";c.beginPath();c.ellipse(0,13,17,6,0,0,7);c.fill();
-    const fill=n.color||"#f5dac8",outline="#786154";
-    // Rounded body
-    R(c,-11,-3,22,20,11,fill,outline,2);
-    // Ears or horns
-    if(n.kind==="rabbit"){
-      R(c,-13,-35,10,25,8,fill,outline,2);R(c,3,-35,10,25,8,fill,outline,2);
-      R(c,-9,-31,4,17,5,"#f3b3bc");R(c,7,-31,4,17,5,"#f3b3bc");
-    }else if(n.kind==="fox"){
-      poly(c,[[-16,-15],[-17,-36],[-2,-23]],fill,outline,2);
-      poly(c,[[16,-15],[17,-36],[2,-23]],fill,outline,2);
-    }else if(n.kind==="cat"){
-      poly(c,[[-14,-11],[-17,-32],[-2,-24]],fill,outline,2);
-      poly(c,[[14,-11],[17,-32],[2,-24]],fill,outline,2);
-    }else if(n.kind==="deer"){
-      R(c,-15,-34,3,20,3,"#b78965");R(c,10,-34,3,20,3,"#b78965");
-      R(c,-22,-28,14,3,2,"#b78965");R(c,8,-28,14,3,2,"#b78965");
-    }else{
-      circle(c,-12,-22,9,fill,outline,2);circle(c,12,-22,9,fill,outline,2);
-    }
-    circle(c,0,-16,18,fill,outline,2);
-    circle(c,-6,-18,2.3,"#4d433e");circle(c,6,-18,2.3,"#4d433e");
-    circle(c,-11,-12,3.5,"#edaaa8");circle(c,11,-12,3.5,"#edaaa8");
-    circle(c,0,-12,2,"#926a68");
+    // The map avatar uses the exact same animal emoji as the comparison card.
+    // This avoids showing generic mouse-like heads for foxes, deer and rabbits.
+    const bob=Math.sin(t/210+(n.id.charCodeAt(0)%9))*2;
+    c.save();
+    c.translate(x,y+bob);
+    c.fillStyle="#4e6e5b40";
+    c.beginPath();c.ellipse(0,17,22,7,0,0,Math.PI*2);c.fill();
+    // Miniature feet and colored scarf make every wandering animal readable.
+    R(c,-14,7,11,12,5,"#936b62","#725a54",1.5);
+    R(c,3,7,11,12,5,"#936b62","#725a54",1.5);
+    R(c,-16,-6,32,18,10,n.color||"#f6d9c5","#977967",2);
+    R(c,-13,-3,26,6,3,"#ffffff84");
+    c.textAlign="center";
+    c.textBaseline="middle";
+    c.font='47px "Apple Color Emoji","Segoe UI Emoji","Noto Color Emoji",sans-serif';
+    c.fillText(n.emoji||"🐾",0,-20);
     c.restore();
   }
   function npcDialogue(n,now){
