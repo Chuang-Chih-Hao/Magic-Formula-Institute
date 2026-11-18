@@ -139,4 +139,75 @@ function makeQuestion(previous = []) {
   }
   return {...quest(rand(0,13)),id:require("node:crypto").randomBytes(8).toString("hex")};
 }
-module.exports={makeQuestion};
+// Rare formula challenge: two or more linked ratio steps; never served through
+// ordinary recipe unlock questions. The target name is intentionally not used
+// to compute the answer, which allows the same challenge bank for all drops.
+function makeSpecialQuestion(previous=[]) {
+  const seen=new Set(previous.map(q=>typeof q==="string"?q:q.prompt));
+  for(let attempt=0;attempt<80;attempt++){
+    const type=rand(0,3),place=pick(names),[a,b]=pick(things);
+    const x=rand(2,5),y=rand(2,5),z=rand(1,4),k=rand(3,6),extra=rand(2,7);
+    let prompt,answer,wrong,explanation;
+    if(type===0){
+      const total=(x+y+z)*k;
+      // First split a total into three ratio shares, then a second portion.
+      const shared=x*k;
+      const subdivide=rand(2,5);
+      prompt=place+"得到"+total+"克的神秘原料，依 "+x+"："+y+"："+z+
+        " 分成三鍋。第一鍋再均分成 "+subdivide+" 包，每包各多少克？";
+      // To keep answers integral we multiply the whole first stage by subportion.
+      const complete=x*k*subdivide;
+      const sum=(x+y+z)*k*subdivide;
+      prompt=place+"得到"+sum+"克神秘原料，依 "+x+"："+y+"："+z+
+        " 分成三鍋。第一鍋再平均分成 "+subdivide+" 包，每包多少克？";
+      answer=x*k;
+      wrong=[y*k,z*k,x*k*subdivide,(x+y)*k];
+      explanation="總份數 "+(x+y+z)+"，每份 "+k*subdivide+" 克；第一鍋有 "+
+        complete+" 克，再除以 "+subdivide+"，每包 "+answer+" 克。";
+    }else if(type===1){
+      const first=x*k,second=y*k;
+      const after=first+extra;
+      const d=gcd(after,second);
+      prompt=place+"原本把"+a+" "+first+"匙與"+b+" "+second+
+        "匙混合，又額外加入"+a+" "+extra+"匙。新的最簡比（"+a+"："+b+"）為何？";
+      answer=after/d+"："+second/d;
+      wrong=[first+":"+second,second+":"+after,first+extra+":"+second,
+        x+":"+y];
+      explanation="先算新"+a+"="+first+"＋"+extra+"="+after+"匙；"+
+        b+"仍為"+second+"匙。將"+after+"："+second+" 同除 "+d+
+        "，得到最簡比 "+answer+"。";
+    }else if(type===2){
+      const total=(x+y+z)*k,keep=x*k,other=(y+z)*k;
+      const price=rand(4,8);
+      prompt=place+"用"+total+"毫升魔法水，依 "+x+"："+y+"："+z+
+        " 分給三種精華。後兩種精華每毫升成本 "+price+
+        " 金幣，後兩種合計成本多少金幣？";
+      answer=other*price;
+      wrong=[keep*price,(x+y)*k*price,other+price,total*price];
+      explanation="後兩種共 "+(y+z)+" 份，占 "+other+" 毫升；每毫升 "+
+        price+" 金幣，成本 "+other+"×"+price+"＝"+answer+"。";
+    }else{
+      const aCount=x*k,bCount=y*k,added=extra*k;
+      const newTotal=aCount+bCount+added;
+      const newA=aCount+added;
+      prompt=place+"原有"+a+" "+aCount+"毫升、"+b+" "+bCount+
+        "毫升，再加入"+a+" "+added+
+        "毫升。新配方中"+a+"占總量的幾分之幾？（最簡分數）";
+      const d=gcd(newA,newTotal);
+      answer=(newA/d)+"/"+(newTotal/d);
+      wrong=[(aCount/gcd(aCount,aCount+bCount))+"/"+((aCount+bCount)/gcd(aCount,aCount+bCount)),
+        bCount+"/"+newTotal,newA+"/"+bCount,newA+"/"+newTotal];
+      explanation="先算 "+a+" 有 "+aCount+"＋"+added+"＝"+newA+
+        " 毫升，總量 "+newTotal+" 毫升。占比 "+newA+"/"+newTotal+
+        " 約分（同除 "+d+"）後為 "+answer+"。";
+    }
+    const q={...makeOptions(answer,wrong),answer:String(answer),
+      skill:["雙重比例分配","調整配方與約分","比例與成本連算","加料後的分數占比"][type],
+      type:"rare-"+type,prompt:"🌠 傳說級難題｜"+prompt,explanation,
+      rarity:"legendary",id:require("node:crypto").randomBytes(8).toString("hex")};
+    if(!seen.has(q.prompt))return q;
+  }
+  throw Error("Unable to generate a unique special formula challenge");
+}
+
+module.exports={makeQuestion,makeSpecialQuestion};
