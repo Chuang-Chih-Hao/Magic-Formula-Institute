@@ -303,6 +303,23 @@ function completeRound(io,r,now,final=false){
   }
   sendState(io,r);
 }
+function forceStartAfterDeadline(io,r,now=Date.now()){
+  // Never auto-start round 1: pupils must explicitly unlock and lock 3 recipes.
+  if(r.phase!=="setup"||r.round<=1||now<r.prepEndsAt||!r.players.length)return false;
+  for(const p of r.players){
+    if(!p.ready){
+      // The last locked menu from the previous round is always retained.
+      // In-progress edits only count if they were saved to the server.
+      const valid=p.products.length===3&&p.products.every(x=>x&&p.unlocked.includes(x.recipeId)&&buildProduct(x,p.evolution));
+      if(!valid)throw Error("Previous locked menu is invalid; refusing to force-start");
+      p.ready=true;
+    }
+  }
+  addEvent(r,{kind:"autolock",round:r.round,
+    message:"⏰ 本輪調整時間到！未鎖定攤位已沿用最後儲存的三款飲料。"});
+  beginMarket(io,r,now);
+  return true;
+}
 function runServer(port=PORT){
   const app=express();
   app.disable("x-powered-by");
@@ -496,11 +513,7 @@ function runServer(port=PORT){
       if(now-r.createdAt>6*3600000){rooms.delete(id);continue;}
       if(r.phase==="setup"&&r.round>1){
         r.remaining=Math.max(0,Math.ceil((r.prepEndsAt-now)/1000));
-        if(r.remaining===0){
-          r.players.filter(p=>!p.ready).forEach(p=>{p.ready=true;});
-          addEvent(r,{kind:"autolock",message:"⏰ 本輪準備時間到！尚未鎖定的店鋪已沿用上輪已儲存的商品。"});
-          beginMarket(io,r,now);
-        }
+        if(r.remaining===0)forceStartAfterDeadline(io,r,now);
       }
       if(r.phase==="market"&&!r.paused){
         r.remaining=Math.max(0,Math.ceil((r.endsAt-now)/1000));
@@ -530,4 +543,4 @@ function runServer(port=PORT){
 }
 if(require.main===module)runServer();
 module.exports={runServer,createRoom,newPlayer,makeQuestion,qualityFor,costFor,buildProduct,evaluateOffer,
-  rankOffers,decorateScore,pickCustomer,settleNpc,RECIPES,DECORATIONS,MAP};
+  rankOffers,decorateScore,pickCustomer,settleNpc,beginMarket,completeRound,forceStartAfterDeadline,RECIPES,DECORATIONS,MAP};
