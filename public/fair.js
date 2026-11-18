@@ -379,13 +379,13 @@
     const cooldown=Math.max(0,Math.ceil(((boost.marketActionUntil||0)-now)/1000));
     const actions=[
       {id:"advertise",emoji:"📣",name:"魔法招牌攬客",price:18,detail:"60 秒持續帶來額外 NPC！增加進店人次",field:"promoUntil"},
-      {id:"tasting",emoji:"🥤",name:"開放試喝",price:12,detail:"60 秒成交率 +22 個百分點！不增加客流",field:"tastingUntil"},
+      {id:"tasting",emoji:"🥤",name:"開放試喝",price:12,detail:"60 秒成交率最多 +22 個百分點！不增加客流",field:"tastingUntil"},
       {id:"shield",emoji:"🛡️",name:"星光防護罩",price:15,detail:"90 秒擋一次壞天氣",field:"shieldUntil"}
     ];
     return '<div class="market-actions"><div class="action-cash">🪙 可用淨利：<strong>'+fmtMoney(p.profit)+'</strong>'
       +(cooldown?'<span>⏳ 下次操作 '+cooldown+' 秒</span>':"")+'</div>'
       +'<div class="action-outcomes"><span>📣 招來額外訪客 <b>'+Number(p.promoLeads||0)+'</b> 位</span>'
-      +'<span>🥤 試喝促成交易 <b>'+Number(p.tastingConversions||0)+'</b> 杯</span></div>'
+      +'<span>🥤 試喝期間成交 <b>'+Number(p.tastingConversions||0)+'</b> 杯</span></div>'
       +actions.map(a=>{
         const active=Math.ceil(Math.max(0,(boost[a.field]||0)-now)/1000);
         const disabled=room.paused||cooldown>0||p.profit<a.price;
