@@ -9,7 +9,7 @@ const http=require("node:http");
 const path=require("node:path");
 const crypto=require("node:crypto");
 const {Server}=require("socket.io");
-const {makeQuestion}=require("./fair-questions");
+const {makeQuestion,makeSpecialQuestion}=require("./fair-questions");
 const {npcAiMode,maybeAiDialogue}=require("./server");
 
 const PORT=Number(process.env.PORT||3000);
@@ -19,6 +19,8 @@ const CYCLE_SECONDS=10*60;
 const FIRST_PREP_SECONDS=6*60;
 const GAME_SECONDS=30*60;
 const MAX_EVOLUTION=3;
+const RARE_DROP_CHANCE=0.16;
+const MARKET_EVENT_INTERVAL=[28000,42000];
 const MAP={
   entry:{x:520,y:666}, hub:{x:520,y:343},
   booths:[
@@ -46,7 +48,10 @@ const RECIPES=[
   {id:"sun",name:"日光蜂蜜",emoji:"🍯",ratio:[2,2,3],flavor:"甜美",color:"#f5bf5e"},
   {id:"cloud",name:"銀河奶霜",emoji:"☁️",ratio:[2,3,3],flavor:"夢幻",color:"#b9b4df"},
   {id:"rose",name:"玫瑰泡泡",emoji:"🌹",ratio:[3,2,2],flavor:"夢幻",color:"#ed9aaf"},
-  {id:"lime",name:"綠野檸香",emoji:"🍋",ratio:[1,2,4],flavor:"清爽",color:"#b8d881"}
+  {id:"lime",name:"綠野檸香",emoji:"🍋",ratio:[1,2,4],flavor:"清爽",color:"#b8d881"},
+  {id:"aurora",name:"極光精靈露",emoji:"🌌",ratio:[3,1,3],flavor:"夢幻",color:"#8ed8c7",rare:true},
+  {id:"phoenix",name:"鳳凰焰火茶",emoji:"🔥",ratio:[2,3,2],flavor:"甜美",color:"#f2a46d",rare:true},
+  {id:"comet",name:"彗星冰晶汽水",emoji:"☄️",ratio:[1,4,2],flavor:"清爽",color:"#97aff0",rare:true}
 ];
 const NPCS=[
  {name:"小兔米米",emoji:"🐰",kind:"rabbit",color:"#fff0e9",flavor:"甜美"},
@@ -93,14 +98,23 @@ function buildProduct(menu,evolution={}){
   if(!recipe||!validMix(menu.mix)||!Number.isInteger(menu.price)||menu.price<12||menu.price>80) return null;
   return {
     recipeId:recipe.id,name:recipe.name,emoji:recipe.emoji,
-    flavor:recipe.flavor,color:recipe.color,ratio:recipe.ratio,
+    flavor:recipe.flavor,color:recipe.color,ratio:recipe.ratio,rare:!!recipe.rare,
     mix:menu.mix.slice(),price:menu.price,baseQuality:qualityFor(menu.mix,recipe.ratio),
-    quality:Math.min(115,qualityFor(menu.mix,recipe.ratio)+Math.min(MAX_EVOLUTION,evolution[recipe.id]||0)*5),
+    quality:Math.min(125,qualityFor(menu.mix,recipe.ratio)+Math.min(MAX_EVOLUTION,evolution[recipe.id]||0)*5+(recipe.rare?8:0)),
     level:Math.min(MAX_EVOLUTION,evolution[recipe.id]||0),
     cost:cents(costFor(menu.mix))
   };
 }
-function evaluateOffer(player,npc,flavorBudget,randomJitter=0){
+function activeMarketBonus(player,now=Date.now()){
+  let total=0;
+  const detail=[];
+  if((player.promoUntil||0)>now){total+=27;detail.push("宣傳活動 +27");}
+  if((player.tastingUntil||0)>now){total+=15;detail.push("免費試飲 +15");}
+  if((player.festivalBuffUntil||0)>now){total+=22;detail.push("幸運流星 +22");}
+  if((player.fogUntil||0)>now){total-=23;detail.push("霧霾干擾 -23");}
+  return {score:total,text:detail.join("、")};
+}
+function evaluateOffer(player,npc,flavorBudget,randomJitter=0,now=Date.now()){
   let best=null;
   for(const item of player.products.map(menu=>buildProduct(menu,player.evolution)).filter(Boolean)){
     if(!item||item.price>flavorBudget)continue;
@@ -108,10 +122,11 @@ function evaluateOffer(player,npc,flavorBudget,randomJitter=0){
     const affordable=Math.round(clamp((flavorBudget-item.price)/flavorBudget,0,1)*29);
     const taste=item.flavor===npc.flavor?22:0;
     const deco=decorateScore(player.decor,npc.flavor);
-    const score=quality+affordable+taste+deco.score+randomJitter;
+    const active=activeMarketBonus(player,now);
+    const score=quality+affordable+taste+deco.score+active.score+randomJitter;
     if(!best||score>best.score){
-      best={item,score,quality,affordable,taste,decor:deco.score,
-        bonusText:deco.breakdown.join("、"),flavorMatch:!!taste};
+      best={item,score,quality,affordable,taste,decor:deco.score,eventBonus:active.score,
+        bonusText:[...deco.breakdown,active.text].filter(Boolean).join("、"),flavorMatch:!!taste};
     }
   }
   return best;
@@ -127,7 +142,7 @@ function createRoom(){
   const room={code,hostSecret:uid()+uid(),hostId:null,phase:"setup",round:1,
     duration:MARKET_SECONDS,remaining:FIRST_PREP_SECONDS,prepDuration:CYCLE_SECONDS-MARKET_SECONDS,
     prepEndsAt:0,sessionStartedAt:0,gameEndsAt:0,roundSummary:null,endsAt:0,paused:false,
-    players:[],npcs:[],events:[],spawnAt:0,lastAIAt:0,entrySeq:0,
+    players:[],npcs:[],events:[],activeEvents:[],nextEventAt:0,spawnAt:0,lastAIAt:0,entrySeq:0,
     createdAt:Date.now()};
   rooms.set(code,room);return room;
 }
@@ -135,7 +150,9 @@ function newPlayer(name){
   return {id:uid(),token:uid()+uid(),socketId:null,name:clean(name,12)||"魔法店長",
     shopName:"我的魔法飲料屋",theme:choose(THEMES),decor:[],products:blankProducts(),
     unlocked:[],evolution:{},ready:false,research:0,attempts:0,correct:0,
-    question:null,questionHistory:[],result:null,
+    question:null,questionHistory:[],result:null,specialOffer:null,
+    promoUntil:0,tastingUntil:0,shieldUntil:0,fogUntil:0,festivalBuffUntil:0,
+    marketActionUntil:0,
     sales:0,revenue:0,cost:0,profit:0,stars:0,visits:[]};
 }
 function productPublic(menu,evolution){return buildProduct(menu,evolution);}
@@ -143,7 +160,10 @@ function playerPublic(p,i) {
   return {id:p.id,booth:i,online:!!p.socketId,name:p.name,shopName:p.shopName,theme:p.theme,
     decor:p.decor,products:p.products.map(menu=>productPublic(menu,p.evolution)),ready:p.ready,
     revenue:cents(p.revenue),cost:cents(p.cost),profit:cents(p.profit),
-    sales:p.sales,stars:p.stars,correct:p.correct};
+    sales:p.sales,stars:p.stars,correct:p.correct,
+    boosts:{promoUntil:p.promoUntil||0,tastingUntil:p.tastingUntil||0,
+      shieldUntil:p.shieldUntil||0,fogUntil:p.fogUntil||0,
+      festivalBuffUntil:p.festivalBuffUntil||0,marketActionUntil:p.marketActionUntil||0}};
 }
 function roomPublic(r){
   return {code:r.code,phase:r.phase,round:r.round,paused:r.paused,duration:r.duration,
@@ -153,13 +173,13 @@ function roomPublic(r){
       Math.max(0,Math.ceil((r.gameEndsAt-Date.now())/1000)):GAME_SECONDS,
     roundSummary:r.roundSummary,remaining:r.remaining,serverNow:Date.now(),hostOnline:!!r.hostId,
     players:r.players.map(playerPublic),
-    npcAiMode:npcAiMode(),npcs:r.npcs.map(n=>({...n})),
+    npcAiMode:npcAiMode(),npcs:r.npcs.map(n=>({...n})),activeEvents:r.activeEvents||[],
     events:r.events.slice(0,18),recipes:RECIPES,decorations:DECORATIONS};
 }
 function selfPublic(p){
   return {id:p.id,name:p.name,ready:p.ready,unlocked:p.unlocked,evolution:p.evolution,theme:p.theme,
     shopName:p.shopName,products:p.products.map(menu=>productPublic(menu,p.evolution)),decor:p.decor,
-    research:p.research,correct:p.correct,attempts:p.attempts,
+    research:p.research,correct:p.correct,attempts:p.attempts,specialOffer:p.specialOffer,
     question:p.question ? {id:p.question.id,prompt:p.question.prompt,choices:p.question.choices,skill:p.question.skill,target:p.question.target,action:p.question.action}:null,
     result:p.result};
 }
@@ -286,6 +306,7 @@ function beginMarket(io,r,now){
   if(r.round===1&&!r.players.every(p=>p.ready))return;
   r.phase="market";r.paused=false;r.remaining=r.duration;r.endsAt=now+r.duration*1000;
   r.spawnAt=now+1200;r.lastAIAt=0;r.npcs=[];
+  r.activeEvents=[];r.nextEventAt=now+rand(...MARKET_EVENT_INTERVAL);
   r.roundStartTotals=r.players.map(p=>({id:p.id,profit:p.profit,sales:p.sales}));
   addEvent(r,{kind:"start",round:r.round,message:"🎉 第 "+r.round+" 輪開市！顧客入場，開始限時販售！"});
   sendState(io,r);
@@ -298,7 +319,7 @@ function completeRound(io,r,now,final=false){
     return {shopName:p.shopName,roundProfit:cents(p.profit-start.profit),
       roundSales:p.sales-start.sales,profit:cents(p.profit),sales:p.sales};
   }).sort((a,b)=>b.roundProfit-a.roundProfit||b.profit-a.profit)};
-  r.npcs=[];r.paused=false;r.roundSummary=summary;
+  r.npcs=[];r.paused=false;r.roundSummary=summary;r.activeEvents=[];r.nextEventAt=0;
   if(final){
     r.phase="finished";r.remaining=0;
     addEvent(r,{kind:"finish",round:r.round,message:"🏆 教師宣布園遊會閉幕，總成績結算！"});
@@ -480,7 +501,16 @@ function runServer(port=PORT){
     });
     handle("quest:get",({target})=>{
       const {r,p}=setup();
+      if(target==="__special__"){
+        const rare=recipeById(p.specialOffer);
+        if(!rare||!rare.rare||p.unlocked.includes(rare.id))
+          throw Error("目前沒有尚待挑戰的稀有食譜");
+        const q=makeSpecialQuestion(p.questionHistory);
+        p.question={...q,target:rare.id,action:"special"};
+        p.result=null;sendState(io,r);return;
+      }
       if(target!=="practice"&&!recipeById(target))throw Error("配方不存在");
+      if(recipeById(target)?.rare&&!p.unlocked.includes(target))throw Error("傳說食譜必須先掉落線索並完成特殊挑戰");
       if(target!=="practice"&&(p.evolution[target]||0)>=MAX_EVOLUTION)throw Error("這個配方已進化到最高等級");
       const q=makeQuestion(p.questionHistory);
       p.question={...q,target,action:target==="practice"?"practice":
@@ -496,14 +526,31 @@ function runServer(port=PORT){
       p.attempts++;
       if(correct){
         p.correct++;p.research+=2;
+        if(q.action==="special"&&!p.unlocked.includes(q.target)){
+          p.unlocked.push(q.target);
+          p.specialOffer=null;
+          addEvent(r,{kind:"rare",emoji:"🌠",message:p.name+" 破解傳說難題，獲得「"+recipeById(q.target).name+"」！"});
+        }
         if(q.action==="unlock"&&!p.unlocked.includes(q.target))p.unlocked.push(q.target);
         if(q.action==="evolve")p.evolution[q.target]=Math.min(MAX_EVOLUTION,(p.evolution[q.target]||0)+1);
+      }
+      if(q.action==="special"&&!correct)p.specialOffer=null;
+      if(correct&&q.action!=="special"&&!p.specialOffer){
+        const available=RECIPES.filter(x=>x.rare&&!p.unlocked.includes(x.id));
+        if(available.length&&Math.random()<RARE_DROP_CHANCE){
+          p.specialOffer=choose(available).id;
+          addEvent(r,{kind:"rare",emoji:"✨",
+            message:p.name+" 發現神秘食譜線索！要解傳說級難題才能獲得。"});
+        }
       }
       p.questionHistory.push({prompt:q.prompt,type:q.type});
       p.questionHistory=p.questionHistory.slice(-80);
       p.result={correct,answer:q.answer,explanation:q.explanation,action:q.action,
         reward:correct?2:0,unlocked:correct&&q.action==="unlock"?q.target:null,
         evolved:correct&&q.action==="evolve"?q.target:null,
+        specialWon:correct&&q.action==="special"?q.target:null,
+        specialLost:!correct&&q.action==="special",
+        specialDropped:!!p.specialOffer,
         level:q.target==="practice"?0:p.evolution[q.target]||0};
       p.question=null;
       sendState(io,r);
@@ -561,11 +608,13 @@ function runServer(port=PORT){
       r.sessionStartedAt=r.players.length?resetAt:0;
       r.prepEndsAt=r.players.length?resetAt+FIRST_PREP_SECONDS*1000:0;
       r.gameEndsAt=r.players.length?resetAt+GAME_SECONDS*1000:0;
-      r.npcs=[];r.events=[];r.roundSummary=null;
+      r.npcs=[];r.events=[];r.activeEvents=[];r.nextEventAt=0;r.roundSummary=null;
       for(const p of r.players){
         Object.assign(p,{ready:false,sales:0,revenue:0,cost:0,profit:0,stars:0,
           products:blankProducts(),decor:[],unlocked:[],evolution:{},
-          research:0,correct:0,attempts:0,question:null,questionHistory:[],result:null,visits:[]});
+          research:0,correct:0,attempts:0,question:null,questionHistory:[],result:null,
+          specialOffer:null,promoUntil:0,tastingUntil:0,shieldUntil:0,fogUntil:0,
+          festivalBuffUntil:0,marketActionUntil:0,visits:[]});
       }
       sendState(io,r);
     });
