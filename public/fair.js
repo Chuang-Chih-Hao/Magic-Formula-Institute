@@ -123,6 +123,8 @@
       +'<span class="chip" id="phaseLabel">'+(room.paused?"⏸ 暫停中":"✦ "+roundText()+" · "+phase())+'</span>'
       +'<span class="chip clock">⏳ 本輪 <b id="timeText">'+timeText()+'</b></span>'
       +'<span class="chip overall-clock">🏁 全場剩餘 <b id="overallText">'+overallText()+'</b></span>'
+      +(role==="student"&&me?.specialOffer&&room.phase==="setup"?
+        '<button class="rare-hud" data-action="focus-rare">📜 傳說卷軸待解！</button>':"")
       +'<button class="btn tiny outline" data-action="leave">離開</button>'
       +'</div></div>';
   }
@@ -265,9 +267,13 @@
       +'<div class="products">'+draft.products.map(productCard).join("")+'</div></section>'
       +'<section class="surface prep-questions"><div class="step-head"><b>03</b><div><h2>數學配方研究桌</h2><p>🔐 第一次答對可解鎖；🌟 再答對使該配方進化，每級品質 +5，最高 Lv.3。</p></div></div>'
       +'<p class="hint">目前解鎖 '+me.unlocked.length+' / '+room.recipes.length+' 種，至少需要 3 種才能鎖定。本輪尚餘 <b id="prepCountdown">'+clock(room.remaining)+'</b>；全場 30 分鐘會自動結束。</p>'
-      +(me.specialOffer?'<div class="special-drop">🌠 **神秘卷軸掉落！** 完成傳說級難題可解鎖 <b>'+
-        esc(chooseById(me.specialOffer)?.name||"特殊配方")+'</b>；答錯則卷軸消失。'
-        +'<button class="btn primary small" data-action="special-quest">立即挑戰</button></div>':"")
+      +(me.specialOffer?'<div class="special-drop" role="status" aria-live="polite">'
+        +'<span class="rare-scroll-art" aria-hidden="true">📜<i>✦</i></span>'
+        +'<div class="rare-scroll-copy"><strong>🌠 傳說卷軸已掉落！</strong>'
+        +'<b>'+esc(chooseById(me.specialOffer)?.name||"特殊配方")+'</b>'
+        +'<small>答對高難度題，才能永久解鎖！答錯卷軸消失。</small></div>'
+        +'<button class="btn primary rare-challenge" data-action="special-quest">⚡ 立即挑戰</button>'
+        +'</div>':"")
       +'<div class="unlock-grid">'+room.recipes.map(recipeCard).join("")+'</div>'
       +'<button class="btn outline full" data-action="practice" style="margin:12px 0">🧠 另外挑戰一題比例應用</button>'
       +'<div id="quizArea">'+questZone()+'</div>'
@@ -343,28 +349,41 @@
     return (room?.activeEvents||[]).filter(e=>e.expiresAt>now);
   }
   function eventBanner(){
+    const now=localTime();
     const events=currentMarketEvents();
     if(!events.length)return '<div class="event-stage quiet">'
-      +'🌼 園遊會正營業中！神秘事件隨時可能發生，留意顧客與攤位變化。</div>';
-    return '<div class="event-stage"><span class="event-spark">🎇 隨機事件發生中</span>'
-      +events.map(e=>'<div class="event-stage-item"><b>'+esc(e.emoji)+' '+esc(e.name||"園遊會驚喜")+'</b>'
-      +'<span>'+esc(e.message)+'</span><small>'+esc(e.why)+'</small></div>').join("")
-      +'</div>';
+      +'🌷 隨機驚喜即將降臨！注意地圖上的流星、迷霧、金幣雨與動物遊行。</div>';
+    const latest=events[events.length-1];
+    const shop=room.players.find(p=>p.id===latest.shopId);
+    const seconds=Math.max(0,Math.ceil((latest.expiresAt-now)/1000));
+    return '<div class="event-stage active">'
+      +'<div class="event-stage-icon" aria-hidden="true">'+esc(latest.emoji||"✨")+'</div>'
+      +'<div class="event-stage-main"><span class="event-spark">⚡ 園遊會突發大事件 ⚡</span>'
+      +'<strong>'+esc(latest.name||"魔法事件")+'</strong>'
+      +'<p>'+esc(latest.message)+'</p><small>'+esc(latest.why||"")+'</small></div>'
+      +'<div class="event-stage-impact"><b>'+(shop?esc(shop.shopName):"全場")+'</b>'
+      +'<strong>'+(latest.type==="fog"?"⚠️ -23 分":latest.type==="stardust"?"🌟 +22 分":
+        latest.type==="golden"?"🪙 +"+latest.amount:latest.type==="rush"?"🐾 顧客變多":
+        latest.type==="parade"?"🎈 "+esc(latest.flavor)+"口味":
+        latest.type==="scroll"?"📜 傳說題":"✨ 驚喜")+'</strong>'
+      +'<small>剩餘 '+seconds+' 秒</small></div></div>';
   }
   function marketActionsPanel(){
     if(!me||isTeacher()||room.phase!=="market")return
-      '<div class="empty-feed">🎓 老師可以觀察學生的即時經營決策；學生可自行花金幣攬客、防護或舉辦試喝。</div>';
+      '<div class="empty-feed">🎓 學生可投資兩種不同策略：📣 招來更多顧客；🥤 讓決定購買的顧客更有意願成交。防護罩則用來抵擋迷霧。</div>';
     const p=currentPlayer();
     if(!p)return '<div class="empty-feed">尚未找到你的攤位</div>';
     const now=localTime(),boost=p.boosts||{};
     const cooldown=Math.max(0,Math.ceil(((boost.marketActionUntil||0)-now)/1000));
     const actions=[
-      {id:"advertise",emoji:"📣",name:"魔法招牌攬客",price:18,detail:"60 秒吸引力 +27",field:"promoUntil"},
-      {id:"tasting",emoji:"🥤",name:"開放試喝",price:12,detail:"60 秒吸引力 +15",field:"tastingUntil"},
+      {id:"advertise",emoji:"📣",name:"魔法招牌攬客",price:18,detail:"60 秒持續帶來額外 NPC！增加進店人次",field:"promoUntil"},
+      {id:"tasting",emoji:"🥤",name:"開放試喝",price:12,detail:"60 秒成交率 +22 個百分點！不增加客流",field:"tastingUntil"},
       {id:"shield",emoji:"🛡️",name:"星光防護罩",price:15,detail:"90 秒擋一次壞天氣",field:"shieldUntil"}
     ];
     return '<div class="market-actions"><div class="action-cash">🪙 可用淨利：<strong>'+fmtMoney(p.profit)+'</strong>'
       +(cooldown?'<span>⏳ 下次操作 '+cooldown+' 秒</span>':"")+'</div>'
+      +'<div class="action-outcomes"><span>📣 招來額外訪客 <b>'+Number(p.promoLeads||0)+'</b> 位</span>'
+      +'<span>🥤 試喝促成交易 <b>'+Number(p.tastingConversions||0)+'</b> 杯</span></div>'
       +actions.map(a=>{
         const active=Math.ceil(Math.max(0,(boost[a.field]||0)-now)/1000);
         const disabled=room.paused||cooldown>0||p.profit<a.price;
@@ -505,8 +524,18 @@
         "🧪 自由調配的材料與售價已存好！品質要鎖定攤位時才揭曉。":
         "第 "+(i+1)+" 款飲品已存好，品質 "+r.quality+" 分！"));
     }
+    if(action==="focus-rare"){
+      const pane=$(".prep-questions");if(pane)pane.scrollTop=0;
+      const card=$(".special-drop");if(card){card.classList.remove("rare-attention");
+        void card.offsetWidth;card.classList.add("rare-attention");}
+      return;
+    }
     if(action==="special-quest"){
-      return send("quest:get",{target:"__special__"},()=>toast("🌠 傳說難題已出現！成功才會獲得特殊食譜。"));
+      return send("quest:get",{target:"__special__"},()=>{
+        const pane=$(".prep-questions"),question=$("quizArea");
+        if(pane&&question)pane.scrollTop=Math.max(0,question.offsetTop-pane.offsetTop-105);
+        toast("🌠 傳說難題已出現！答對才能取得特殊食譜。");
+      });
     }
     if(action==="get-quest"){
       const unlocked=me.unlocked.includes(b.dataset.id);
