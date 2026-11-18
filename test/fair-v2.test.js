@@ -200,13 +200,13 @@ test("tasting boosts real purchase probability by 22 percentage points",()=>{
     const first=makeVisitor();
     settleNpc(io,room,first);
     assert.equal(first.bought,false,"base probability 0.58 should refuse roll 0.70");
-    assert.equal(first.purchaseChance,0.58);
+    assert.ok(Math.abs(first.purchaseChance-0.58)<1e-9);
     p.tastingUntil=Date.now()+60000;
     const second=makeVisitor();
     settleNpc(io,room,second);
     assert.equal(second.bought,true,"samples raise probability to 0.80");
     assert.equal(second.tastingBonus,0.22);
-    assert.equal(second.purchaseChance,0.8);
+    assert.ok(Math.abs(second.purchaseChance-0.8)<1e-9);
     assert.equal(p.tastingConversions,1);
     assert.equal(p.sales,1);
     assert.ok(room.events[0].why.includes("試喝"));
