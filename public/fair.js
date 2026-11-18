@@ -685,6 +685,13 @@
     if(p){
       p.products.forEach((item,i)=>{
         const px=-67+i*64,py=-48;
+        if(!item){
+          R(c,px-17,py,34,43,9,"#e5d8c5","#fcf7ea",3);
+          drawText(c,"🔒",px,py+19,"20px sans-serif");
+          R(c,px-23,py+46,46,18,7,"#fff5d9","#e3c9aa",2);
+          drawText(c,"未解鎖",px,py+55,"900 11px 'Noto Sans TC'","#84644a");
+          return;
+        }
         R(c,px-7,py-9,14,9,2,"#ab7a5a");
         R(c,px-17,py,34,43,9,item.color||"#e8bdc7","#ffffff",3);
         R(c,px-12,py+9,8,18,4,"#ffffff8c");
