@@ -333,7 +333,7 @@ function settleNpc(io,r,n) {
     shopId:p?.id||null,shopName:p?.shopName||null,
     product:bought?offer.item.name:null,price:bought?offer.item.price:0,
     message,why:explanation,reason:n.reason,dialogue:n.speech,budget:n.budget,flavor:n.flavor,
-    tastingBonus,advertisedFor:n.advertisedFor,round:r.round};
+    tastingBonus:tastingBoost,advertisedFor:n.advertisedFor,round:r.round};
   addEvent(r,event);
   io.to(r.code).emit("fair:trade",event);
   if(p){
