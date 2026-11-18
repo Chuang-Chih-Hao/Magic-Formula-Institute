@@ -62,8 +62,6 @@ async function main(){
     assert.equal(await student.locator(".unlock-card.unlocked").count(),0,"no pre-unlocked drinks");
     assert.equal(await student.locator(".unlock-card.rare-recipe").count(),3,
       "three legendary recipes exist but cannot be picked without drops");
-    console.log("RARITY DOM",await student.locator(".unlock-card.rare-recipe").evaluateAll(nodes=>
-      nodes.map(el=>({outerHTML:el.outerHTML.slice(0,170),disabled:el.disabled,action:el.dataset.action})))); 
     assert.equal(await student.locator(".unlock-card.rare-recipe:disabled").count(),3);
     assert.match(await student.locator("#overallText").textContent(),/29:|30:00/);
     assert.match(await student.locator("#timeText").textContent(),/05:|06:00/);
