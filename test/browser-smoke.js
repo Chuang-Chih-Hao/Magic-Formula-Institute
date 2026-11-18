@@ -60,6 +60,9 @@ async function main(){
     assert.equal(await student.locator(".decor-card").count(),5);
     console.log("PASS student can see three menu cards and five decoration options");
     assert.equal(await student.locator(".unlock-card.unlocked").count(),0,"no pre-unlocked drinks");
+    assert.match(await student.locator("#overallText").textContent(),/29:|30:00/);
+    assert.match(await student.locator("#timeText").textContent(),/05:|06:00/);
+    console.log("PASS first preparation timer and 30-minute global timer visible");
 
     await student.locator("#shopName").fill("月光森林魔法屋");
     await student.locator('[data-action="theme"][data-id="mint"]').click();
@@ -92,6 +95,17 @@ async function main(){
     await student.locator("#recipe-0").selectOption("berry");
     await student.locator("#recipe-1").selectOption("moon");
     await student.locator("#recipe-2").selectOption("forest");
+    // Re-rendering a selected drink must not return the menu panel to its top.
+    const menuPanel=student.locator(".prep-drinks");
+    await menuPanel.evaluate(el=>{el.scrollTop=140;});
+    const menuBefore=await menuPanel.evaluate(el=>el.scrollTop);
+    await student.locator("#recipe-1").selectOption("forest");
+    await student.locator("#recipe-1").selectOption("moon");
+    const menuAfter=await menuPanel.evaluate(el=>el.scrollTop);
+    assert.ok(menuBefore>=90,"menu content must have enough scrolling range");
+    assert.ok(Math.abs(menuAfter-menuBefore)<8,
+      "switching drinks must preserve the panel's scroll position");
+    console.log("PASS changing a drink does not jump the panel back to the top");
 
     // Verify uniform stage scaling keeps positions and proportions.
     const first=await student.evaluate(()=>{
@@ -130,6 +144,17 @@ async function main(){
     },null,{timeout:16000});
     await teacher.screenshot({path:folder+"/market.png",fullPage:true});
     console.log("PASS teacher and student share one live animated market map");
+    const marketBounds=await teacher.locator(".market-shell").evaluate(el=>
+      ({scrollHeight:el.scrollHeight,clientHeight:el.clientHeight}));
+    assert.ok(marketBounds.scrollHeight>marketBounds.clientHeight+40,
+      "the long market must be vertically scrollable");
+    await teacher.locator("#fairCanvas").hover();
+    await teacher.mouse.wheel(0,800);
+    await teacher.waitForFunction(()=>document.querySelector(".market-shell").scrollTop>40,
+      null,{timeout:5000});
+    await teacher.screenshot({path:folder+"/market-scrolled.png"});
+    console.log("PASS mouse wheel over the map reveals the lower shop and sales content");
+    await teacher.locator(".market-shell").evaluate(el=>{el.scrollTop=0;});
 
     await teacher.waitForFunction(()=>{
       return !!document.querySelector('#eventFeed .event.sale, #eventFeed .event.leave');
