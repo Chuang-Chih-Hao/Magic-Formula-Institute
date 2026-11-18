@@ -192,7 +192,9 @@ function sendState(io,r){
   r.players.forEach(p=>{if(p.socketId)io.to(p.socketId).emit("player:state",selfPublic(p));});
 }
 function pickCustomer(r){
-  const spec=choose(NPCS),budget=rand(28,78);
+  let spec=choose(NPCS);
+  if(r.featuredFlavorUntil>Date.now())spec=choose(NPCS.filter(n=>n.flavor===r.featuredFlavor));
+  const budget=rand(28,78);
   const profile={...spec,budget};
   const offers=rankOffers(r.players,profile,budget);
   // Every customer browses at least one other booth before deciding.
@@ -301,12 +303,91 @@ function settleNpc(io,r,n) {
     });
   }
 }
+const MARKET_ACTIONS={
+  advertise:{name:"魔法招牌攬客",emoji:"📣",cost:18,duration:60000,field:"promoUntil",
+    message:"花 18 金幣在全場大聲宣傳！60 秒內顧客評分 +27"},
+  tasting:{name:"開放試喝",emoji:"🥤",cost:12,duration:60000,field:"tastingUntil",
+    message:"花 12 金幣提供試喝！60 秒內顧客評分 +15"},
+  shield:{name:"星光防護罩",emoji:"🛡️",cost:15,duration:90000,field:"shieldUntil",
+    message:"花 15 金幣保護店鋪！90 秒內抵擋一次突發濃霧"}
+};
+function useMarketAction(io,room,p,type,now=Date.now()){
+  if(room.phase!=="market"||room.paused)throw Error("目前不是可以營業的時間");
+  const action=MARKET_ACTIONS[type];
+  if(!action)throw Error("未知的園遊會行動");
+  if((p.marketActionUntil||0)>now)throw Error("行動冷卻中，請等倒數結束再行動");
+  if(p.profit<action.cost)throw Error("目前淨利不足，需累積至少 "+action.cost+" 金幣");
+  p.cost=cents(p.cost+action.cost);
+  p.profit=cents(p.revenue-p.cost);
+  p[action.field]=now+action.duration;
+  p.marketActionUntil=now+22000;
+  const evt={kind:"action",emoji:action.emoji,round:room.round,shopId:p.id,
+    message:"「"+p.shopName+"」啟動 "+action.name+"！",why:action.message,
+    expiresAt:now+action.duration};
+  addEvent(room,evt);
+  io.to(room.code).emit("fair:event",evt);
+  sendState(io,room);
+  return {remainingProfit:p.profit,boostUntil:p[action.field]};
+}
+function triggerMarketEvent(io,room,now=Date.now(),forcedKind){
+  if(room.phase!=="market"||room.paused||!room.players.length)return null;
+  const p=choose(room.players);
+  const types=["stardust","fog","golden","rush","parade"];
+  const type=forcedKind||choose(types);
+  const evt={kind:"market-event",type,round:room.round,shopId:p.id,
+    expiresAt:now+30000,emoji:"🎪"};
+  if(type==="stardust"){
+    p.festivalBuffUntil=Math.max(p.festivalBuffUntil||0,now+30000);
+    Object.assign(evt,{emoji:"🌠",name:"流星糖粉雨",message:"🌠 流星糖粉落在「"+p.shopName+"」！",
+      why:"這間店 30 秒內所有 NPC 評分 +22，幸運特效會顯示在攤位上"});
+  }else if(type==="fog"){
+    evt.emoji="🌫️";evt.name="迷霧小搗蛋";
+    if((p.shieldUntil||0)>now){
+      p.shieldUntil=0;
+      Object.assign(evt,{type:"shielded",emoji:"🛡️",message:"🛡️「"+p.shopName+"」的防護罩擋下迷霧！",
+        why:"防護罩成功消耗一次，店鋪評分完全不受影響"});
+    }else{
+      p.fogUntil=Math.max(p.fogUntil||0,now+30000);
+      Object.assign(evt,{message:"🌫️ 迷霧小搗蛋遮住「"+p.shopName+"」的招牌！",
+        why:"30 秒內這間店的 NPC 評分 -23，可觀察顧客是否轉向其他攤位"});
+    }
+  }else if(type==="golden"){
+    const amount=rand(8,16);
+    p.revenue=cents(p.revenue+amount);
+    p.profit=cents(p.revenue-p.cost);
+    Object.assign(evt,{emoji:"🎟️",name:"金色幸運券",expiresAt:now+14000,
+      message:"🎟️「"+p.shopName+"」撿到幸運金券！",
+      why:"幸運獎金 +"+amount+" 金幣，已計入收入與累積淨利（不是飲料銷量）"});
+  }else if(type==="rush"){
+    room.rushUntil=Math.max(room.rushUntil||0,now+30000);
+    Object.assign(evt,{emoji:"🐾",name:"動物旅行團",message:"🐾 動物旅行團突然湧入園遊會！",
+      why:"30 秒內 NPC 入場速度加快，大家都有機會爭取更多生意"});
+  }else if(type==="parade"){
+    const flavor=choose(["甜美","清爽","夢幻"]);
+    room.featuredFlavor=flavor;room.featuredFlavorUntil=now+30000;
+    Object.assign(evt,{emoji:"🎈",name:"口味遊行",message:"🎈 "+flavor+"口味主題遊行開始！",
+      why:"30 秒內新入場的 NPC 會特別喜歡「"+flavor+"」口味，請觀察誰最有優勢"});
+  }else throw Error("Unknown market event kind");
+  room.activeEvents=(room.activeEvents||[]).filter(x=>x.expiresAt>now);
+  room.activeEvents.push(evt);
+  room.activeEvents=room.activeEvents.slice(-3);
+  room.nextEventAt=now+rand(...MARKET_EVENT_INTERVAL);
+  addEvent(room,evt);
+  io.to(room.code).emit("fair:event",evt);
+  sendState(io,room);
+  return evt;
+}
 function beginMarket(io,r,now){
   if(r.phase!=="setup"||!r.players.length)return;
   if(r.round===1&&!r.players.every(p=>p.ready))return;
   r.phase="market";r.paused=false;r.remaining=r.duration;r.endsAt=now+r.duration*1000;
   r.spawnAt=now+1200;r.lastAIAt=0;r.npcs=[];
   r.activeEvents=[];r.nextEventAt=now+rand(...MARKET_EVENT_INTERVAL);
+  r.rushUntil=0;r.featuredFlavorUntil=0;r.featuredFlavor=null;
+  for(const p of r.players){
+    p.promoUntil=0;p.tastingUntil=0;p.shieldUntil=0;p.fogUntil=0;
+    p.festivalBuffUntil=0;p.marketActionUntil=0;
+  }
   r.roundStartTotals=r.players.map(p=>({id:p.id,profit:p.profit,sales:p.sales}));
   addEvent(r,{kind:"start",round:r.round,message:"🎉 第 "+r.round+" 輪開市！顧客入場，開始限時販售！"});
   sendState(io,r);
@@ -569,6 +650,10 @@ function runServer(port=PORT){
       sendState(io,r);
       if(r.round>1&&r.players.every(x=>x.ready))beginMarket(io,r,Date.now());
     });
+    handle("market:action",({type})=>{
+      const {r,p}=player();
+      return useMarketAction(io,r,p,type);
+    });
     handle("host:duration",({minutes})=>{
       const r=host();
       if(r.phase!=="setup"||r.round>1||![3,4,5].includes(minutes))throw Error("第一輪可選 3、4 或 5 分鐘的販售期");
@@ -608,7 +693,8 @@ function runServer(port=PORT){
       r.sessionStartedAt=r.players.length?resetAt:0;
       r.prepEndsAt=r.players.length?resetAt+FIRST_PREP_SECONDS*1000:0;
       r.gameEndsAt=r.players.length?resetAt+GAME_SECONDS*1000:0;
-      r.npcs=[];r.events=[];r.activeEvents=[];r.nextEventAt=0;r.roundSummary=null;
+      r.npcs=[];r.events=[];r.activeEvents=[];r.nextEventAt=0;r.rushUntil=0;
+      r.featuredFlavor=null;r.featuredFlavorUntil=0;r.roundSummary=null;
       for(const p of r.players){
         Object.assign(p,{ready:false,sales:0,revenue:0,cost:0,profit:0,stars:0,
           products:blankProducts(),decor:[],unlocked:[],evolution:{},
@@ -647,9 +733,15 @@ function runServer(port=PORT){
           completeRound(io,r,now,false);
         }else{
           let changed=false;
+          if(now>=r.nextEventAt&&r.players.length>0){
+            triggerMarketEvent(io,r,now);changed=true;
+          }
+          const activeBefore=r.activeEvents.length;
+          r.activeEvents=r.activeEvents.filter(evt=>evt.expiresAt>now);
+          if(r.activeEvents.length!==activeBefore)changed=true;
           if(now>=r.spawnAt&&r.players.length>0&&r.remaining>25){
             r.npcs.push(pickCustomer(r));r.npcs=r.npcs.slice(-10);
-            r.spawnAt=now+rand(3200,4700);changed=true;
+            r.spawnAt=now+(r.rushUntil>now?rand(1500,2500):rand(3200,4700));changed=true;
           }
           for(const n of r.npcs){
             if(now>=n.decideAt&&n.stage==="wandering"){settleNpc(io,r,n);changed=true;}
@@ -671,5 +763,6 @@ function runServer(port=PORT){
 }
 if(require.main===module)runServer();
 module.exports={runServer,createRoom,newPlayer,makeQuestion,qualityFor,costFor,buildProduct,evaluateOffer,
-  rankOffers,decorateScore,pickCustomer,settleNpc,beginMarket,completeRound,forceStartAfterDeadline,
+  rankOffers,decorateScore,activeMarketBonus,pickCustomer,settleNpc,triggerMarketEvent,useMarketAction,MARKET_ACTIONS,
+  beginMarket,completeRound,forceStartAfterDeadline,
   finalizeGame,completeMissingMenuAtDeadline,FIRST_PREP_SECONDS,GAME_SECONDS,RECIPES,DECORATIONS,MAP};
